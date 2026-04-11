@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: apache/age:release_PG16_1.6.0
     container_name: cenimatch-db
     environment:
       POSTGRES_USER: u
@@ -10,6 +10,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./data:/data
     restart: unless-stopped
 
 volumes:
