@@ -16,6 +16,10 @@ case "${1:-}" in
     ;;
   migrate)
     shift
+    if [[ "${1:-}" == "seed" ]]; then
+      bash "$DIR/migration/seed.sh"
+      exit 0
+    fi
     make -C "$DIR" migrate
     "$BIN/migrate" "$@"
     ;;
@@ -27,7 +31,7 @@ case "${1:-}" in
     echo "usage: ./run.sh <app|dl|migrate|build>"
     echo "  app            build and run the api server"
     echo "  dl [args]      build and run the downloader"
-    echo "  migrate [cmd]  build and run migrations (reset|drop|create|seed|status)"
+    echo "  migrate [cmd]  build and run migrations (reset|drop|create|status) or seed data via seed.sh"
     echo "  build          build all binaries"
     exit 1
     ;;

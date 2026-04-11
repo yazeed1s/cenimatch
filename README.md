@@ -65,7 +65,15 @@ to download only specific sources:
 ./run.sh dl --list
 ```
 
-### 5. start the server
+### 5. seed data
+
+to load the TMDB/IMDb seed data (expects files in `data/raw/` mounted into the db container):
+
+```bash
+./run.sh migrate seed
+```
+
+### 6. start the server
 
 ```bash
 ./run.sh app
@@ -82,7 +90,8 @@ starts the api on whatever port is in your `.env`. hit `localhost:8080/health` t
 | `make all` | build all go binaries |
 | `./run.sh app` | build and run the api server |
 | `./run.sh dl [flags]` | build and run the dataset downloader |
-| `./run.sh migrate <cmd>` | build and run migrations (reset/drop/create/seed/status) |
+| `./run.sh migrate <cmd>` | build and run migrations (reset/drop/create/status) |
+| `./run.sh migrate seed` | run `migration/seed.sh` inside the db container |
 | `./run.sh build` | build everything |
 
 ## project structure
@@ -138,7 +147,7 @@ movies are keyed on tmdb_id. users use uuid. inserting a movie auto-queues it fo
 | **http server** | `internal/infra/http/server/server.go` | chi mux with cors, logger, recoverer, request-id, real-ip middleware. health route. `Start()`, `StartWithListener()`, `Shutdown(timeout)`, `Router()` |
 | **container** | `internal/container/container.go` | `New(cfg, jwt)` wires: config -> pgxpool -> DBManager -> Server. `Start()` and `Shutdown()` |
 | **app entry** | `cmd/cenimatch/main.go` | `App` struct. `NewApp()` loads env + config, creates container. `Start()` runs server in goroutine. `Run()` blocks on SIGINT/SIGTERM. `Stop()` shuts down |
-| **migrate cli** | `cmd/migrate/main.go` | subcommands: reset, drop, create, seed, status. `status()` shows connection + table count + table list |
-| **migrator** | `internal/migrator/migrator.go` | `DropAllTables` queries pg_tables catalog and drops in reverse. `dropAllEnums` queries pg_type for enum types. `dropAllSequences` queries pg_class. `CreateTables` reads schema-01.sql. `SeedData` reads seed.sql if exists. `ConnectDB` standalone pool creator. 500ms sleep between drops for catalog sync |
+| **migrate cli** | `cmd/migrate/main.go` | subcommands: reset, drop, create, status. `status()` shows connection + table count + table list |
+| **migrator** | `internal/migrator/migrator.go` | `DropAllTables` queries pg_tables catalog and drops in reverse. `dropAllEnums` queries pg_type for enum types. `dropAllSequences` queries pg_class. `CreateTables` reads schema-01.sql. `ConnectDB` standalone pool creator. 500ms sleep between drops for catalog sync |
 | **docker** | `docker-compose.yml` | postgres:16-alpine, named volume `pgdata` |
 | **tooling** | `Makefile`, `run.sh` | make targets: app, dl, migrate, db, db-stop, clean. run.sh wraps build+run with arg passthrough |
