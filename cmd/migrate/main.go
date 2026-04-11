@@ -34,9 +34,6 @@ func main() {
 		if err := m.Reset(ctx); err != nil {
 			log.Fatalf("reset: %v", err)
 		}
-		if err := m.SeedData(ctx); err != nil {
-			log.Printf("seed: %v", err)
-		}
 	case "drop":
 		if err := m.DropAllTables(ctx); err != nil {
 			log.Fatalf("drop: %v", err)
@@ -44,10 +41,6 @@ func main() {
 	case "create":
 		if err := m.CreateTables(ctx); err != nil {
 			log.Fatalf("create: %v", err)
-		}
-	case "seed":
-		if err := m.SeedData(ctx); err != nil {
-			log.Fatalf("seed: %v", err)
 		}
 	case "status":
 		if err := status(ctx, m); err != nil {

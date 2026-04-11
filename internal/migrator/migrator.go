@@ -16,7 +16,6 @@ import (
 // it can:
 // - drop everything in public (tables, enums, sequences) by querying postgres catalogs
 // - run schema.sql to recreate the schema
-// - optionally run seed.sql if it exists
 // it prints to stdout because it's usually called from a cli.
 
 type Migrator struct {
@@ -165,24 +164,6 @@ func (m *Migrator) Reset(ctx context.Context) error {
 	return nil
 }
 
-func (m *Migrator) SeedData(ctx context.Context) error {
-	fmt.Println("seeding development data")
-	p := filepath.Join(m.dir, "seed.sql")
-	if _, err := os.Stat(p); os.IsNotExist(err) {
-		fmt.Println("no seed.sql, skipping")
-		return nil
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return fmt.Errorf("read seed: %w", err)
-	}
-	if _, err = m.pool.Exec(ctx, string(data)); err != nil {
-		return fmt.Errorf("seed data: %w", err)
-	}
-	fmt.Println("seed data inserted")
-	return nil
-}
-
 func (m *Migrator) CheckConnection(ctx context.Context) error {
 	return m.pool.Ping(ctx)
 }
@@ -242,7 +223,6 @@ Commands:
   reset    - drop all tables and recreate from schema
   drop     - drop all tables and types dynamically
   create   - create tables from schema
-  seed     - insert development data
   status   - show database status
   help     - show this 
 

@@ -13,6 +13,7 @@ CREATE TYPE mood_type AS ENUM (
 CREATE TABLE movies (
     tmdb_id INT PRIMARY KEY,
     imdb_id VARCHAR(20),
+    imdb_rating FLOAT,
     title TEXT NOT NULL,
     original_title TEXT,
     release_date DATE,
@@ -51,16 +52,25 @@ CREATE TABLE movie_tags (
 );
 CREATE INDEX idx_movie_tags_movie ON movie_tags(movie_id);
 CREATE INDEX idx_movie_tags_key ON movie_tags(tag_key);
+CREATE TABLE persons (
+    imdb_id VARCHAR(20) PRIMARY KEY,
+    primary_name TEXT NOT NULL,
+    birth_year INT,
+    death_year INT,
+    primary_profession TEXT,
+    known_for_titles TEXT
+);
 CREATE TABLE movie_crew (
     id SERIAL PRIMARY KEY,
     movie_id INT NOT NULL REFERENCES movies(tmdb_id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
+    person_id VARCHAR(20) NOT NULL REFERENCES persons(imdb_id) ON DELETE CASCADE,
     role crew_role NOT NULL,
     character TEXT,
     ordering INT,
-    UNIQUE (movie_id, name, role)
+    UNIQUE (movie_id, person_id, role)
 );
 CREATE INDEX idx_movie_crew_movie ON movie_crew(movie_id);
+CREATE INDEX idx_movie_crew_person ON movie_crew(person_id);
 
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
