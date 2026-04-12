@@ -102,20 +102,21 @@ SELECT
   NULLIF(poster_path, ''),
   FALSE
 FROM (
-  SELECT *, NULLIF(release_date, '')::DATE AS rd FROM staging_tmdb
+  SELECT
+    s.*,
+    NULLIF(release_date, '')::DATE AS rd,
+    sr.average_rating::FLOAT AS rating
+  FROM staging_tmdb s
+  JOIN staging_ratings sr
+    ON s.imdb_id = sr.tconst
+   AND sr.average_rating IS NOT NULL
+   AND sr.average_rating <> '\N'
+  WHERE s.imdb_id IS NOT NULL AND s.imdb_id <> ''
 ) s
+WHERE rating IS NOT NULL
 ON CONFLICT (tmdb_id) DO NOTHING;
 
--- IMDb ratings
-UPDATE movies m
-SET imdb_rating = sr.average_rating::FLOAT
-FROM staging_ratings sr
-WHERE m.imdb_id = sr.tconst
-  AND sr.average_rating IS NOT NULL
-  AND sr.average_rating <> '\N';
-
--- Keep only movies that have an IMDb rating
-DELETE FROM movies WHERE imdb_rating IS NULL;
+-- At this point, only movies with a valid IMDb rating were inserted.
 
 -- Persons (only those referenced by crew)
 WITH needed AS (
@@ -158,6 +159,7 @@ SELECT DISTINCT
 FROM staging_tmdb s
 CROSS JOIN LATERAL unnest(string_to_array(s.genres, ',')) AS gname
 JOIN genres g ON g.name = TRIM(gname)
+JOIN movies m ON m.tmdb_id = s.id::INT  -- only map for movies we kept
 WHERE s.genres IS NOT NULL AND s.genres <> ''
 ON CONFLICT DO NOTHING;
 
