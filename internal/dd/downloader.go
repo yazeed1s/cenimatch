@@ -15,6 +15,7 @@ package dd
 
 import (
 	"archive/zip"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -125,6 +126,27 @@ func (d *Downloader) Download(src Source) error {
 func (d *Downloader) downloadFile(src Source, dir string) error {
 	fname := filepath.Base(src.URL)
 	dpath := filepath.Join(dir, fname)
+	isGzip := strings.HasSuffix(strings.ToLower(fname), ".gz")
+
+	if isGzip {
+		extractedName := strings.TrimSuffix(fname, ".gz")
+		extractedPath := filepath.Join(dir, extractedName)
+
+		if fileExists(extractedPath) {
+			fmt.Printf("skip %s (already extracted)\n", extractedName)
+			return nil
+		}
+
+		if !fileExists(dpath) {
+			if err := d.fetch(src.URL, dpath, src.Auth); err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("skip %s (exists)\n", fname)
+		}
+
+		return gunzipFile(dpath, extractedPath)
+	}
 
 	if fileExists(dpath) {
 		fmt.Printf("skip %s (exists)\n", fname)
@@ -179,6 +201,33 @@ func (d *Downloader) fetch(url, dest string, auth AuthMethod) error {
 		return fmt.Errorf("writing %s: %w", dest, err)
 	}
 	fmt.Printf("saved %s (%s)\n", filepath.Base(dest), humanBytes(size))
+	return nil
+}
+
+func gunzipFile(src, dest string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open gzip %s: %w", src, err)
+	}
+	defer in.Close()
+
+	gz, err := gzip.NewReader(in)
+	if err != nil {
+		return fmt.Errorf("read gzip %s: %w", src, err)
+	}
+	defer gz.Close()
+
+	out, err := os.Create(dest)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", dest, err)
+	}
+	defer out.Close()
+
+	size, err := io.Copy(out, gz)
+	if err != nil {
+		return fmt.Errorf("extract %s: %w", dest, err)
+	}
+	fmt.Printf("extracted %s (%s)\n", filepath.Base(dest), humanBytes(size))
 	return nil
 }
 
