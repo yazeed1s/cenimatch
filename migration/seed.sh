@@ -114,6 +114,9 @@ WHERE m.imdb_id = sr.tconst
   AND sr.average_rating IS NOT NULL
   AND sr.average_rating <> '\N';
 
+-- Keep only movies that have an IMDb rating
+DELETE FROM movies WHERE imdb_rating IS NULL;
+
 -- Persons (only those referenced by crew)
 WITH needed AS (
   SELECT DISTINCT person_id
