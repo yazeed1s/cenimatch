@@ -21,7 +21,7 @@ type Server struct {
 	jwtGenerator ports.JWTGenerator
 }
 
-func NewServer(port int, jwt ports.JWTGenerator) *Server {
+func NewServer(port int, jwt ports.JWTGenerator, movieRepo ports.MovieRepository) *Server {
 
 	r := chi.NewRouter()
 	cors := custommiddleware.DefaultCORSConfig()
@@ -33,6 +33,8 @@ func NewServer(port int, jwt ports.JWTGenerator) *Server {
 	r.Use(middleware.RealIP)
 
 	r.Get("/health", handlers.Health())
+	movieHandler := handlers.NewMovieHandler(movieRepo)
+	r.Get("/movies", movieHandler.ListMovies())
 
 	// we can, later make the timeouts configurable
 	server := &http.Server{

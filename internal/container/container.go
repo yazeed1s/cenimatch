@@ -3,7 +3,8 @@ package container
 import (
 	"cenimatch/internal/config"
 	"cenimatch/internal/infra/database"
-	httpserver "cenimatch/internal/infra/http/server"
+	"cenimatch/internal/infra/http/server"
+	"cenimatch/internal/infra/repository"
 	"cenimatch/internal/ports"
 	"fmt"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 type Container struct {
 	Cfg    *config.Config
 	DB     *database.DBManager
-	Server *httpserver.Server
+	Server *server.Server
 }
 
 func New(cfg *config.Config, jwt ports.JWTGenerator) (*Container, error) {
@@ -29,7 +30,8 @@ func New(cfg *config.Config, jwt ports.JWTGenerator) (*Container, error) {
 		return nil, fmt.Errorf("invalid port %q: %w", cfg.Port, err)
 	}
 
-	srv := httpserver.NewServer(p, jwt)
+	movieRepo := repository.NewMovieRepo(db)
+	srv := server.NewServer(p, jwt, movieRepo)
 
 	return &Container{
 		Cfg:    cfg,
