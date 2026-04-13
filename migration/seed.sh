@@ -147,7 +147,7 @@ ON CONFLICT (tmdb_id) DO NOTHING;
 
 -- At this point, only movies with a valid IMDb rating were inserted.
 
--- persons (those referenced by crew and principals)
+-- Persons (only those referenced by crew)
 WITH needed AS (
   SELECT DISTINCT person_id
   FROM (
@@ -159,7 +159,7 @@ WITH needed AS (
     FROM staging_principals
     WHERE category IN ('actor', 'actress', 'self', 'director', 'writer', 'producer')
   ) u
-  WHERE person_id IS NOT NULL AND person_id <> '' AND person_id <> '\N'
+  WHERE person_id IS NOT NULL AND person_id <> ''
 )
 INSERT INTO persons (imdb_id, primary_name, birth_year, death_year, primary_profession, known_for_titles)
 SELECT
@@ -177,7 +177,6 @@ ON CONFLICT (imdb_id) DO NOTHING;
 WITH g AS (
   SELECT DISTINCT TRIM(g) AS name
   FROM staging_tmdb s
-  JOIN movies m ON m.tmdb_id = s.id::INT
   CROSS JOIN LATERAL unnest(string_to_array(s.genres, ',')) AS g
   WHERE s.genres IS NOT NULL AND s.genres <> ''
 )
@@ -191,7 +190,6 @@ SELECT DISTINCT
   s.id::INT,
   g.id
 FROM staging_tmdb s
-JOIN movies m ON m.tmdb_id = s.id::INT
 CROSS JOIN LATERAL unnest(string_to_array(s.genres, ',')) AS gname
 JOIN genres g ON g.name = TRIM(gname)
 JOIN movies m ON m.tmdb_id = s.id::INT  -- only map for movies we kept
@@ -226,7 +224,7 @@ JOIN persons p ON p.imdb_id = w.person_id
 WHERE c.writers IS NOT NULL AND c.writers <> '\N'
 ON CONFLICT DO NOTHING;
 
--- movie crew: actors
+-- Movie crew: actors from principals (character text prefers principals.characters)
 INSERT INTO movie_crew (movie_id, person_id, role, character, ordering)
 SELECT DISTINCT
   m.tmdb_id,
@@ -244,23 +242,30 @@ WHERE
   AND sp.nconst <> '\N'
 ON CONFLICT DO NOTHING;
 
--- movie crew: producers, directors, and writers with job labels
+-- Enrich existing director/writer rows with job text when available.
+UPDATE movie_crew mc
+SET character = coalesce(nullif(sp.job, ''), nullif(sp.characters, ''))
+FROM staging_principals sp
+JOIN movies m ON m.imdb_id = sp.tconst
+WHERE
+  mc.movie_id = m.tmdb_id
+  AND mc.person_id = sp.nconst
+  AND mc.role IN ('director', 'writer')
+  AND mc.character IS NULL;
+
+-- Movie crew: producers from principals.
 INSERT INTO movie_crew (movie_id, person_id, role, character, ordering)
 SELECT DISTINCT
   m.tmdb_id,
   sp.nconst,
-  CASE
-    WHEN sp.category = 'director' THEN 'director'::crew_role
-    WHEN sp.category = 'writer' THEN 'writer'::crew_role
-    ELSE 'producer'::crew_role
-  END,
+  'producer'::crew_role,
   coalesce(nullif(sp.job, ''), nullif(sp.characters, '')),
   NULLIF(sp.ordering, '\N')::INT
 FROM staging_principals sp
 JOIN movies m ON m.imdb_id = sp.tconst
 JOIN persons p ON p.imdb_id = sp.nconst
 WHERE
-  sp.category IN ('director', 'writer', 'producer')
+  sp.category = 'producer'
   AND sp.nconst IS NOT NULL
   AND sp.nconst <> ''
   AND sp.nconst <> '\N'
