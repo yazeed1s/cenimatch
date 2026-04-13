@@ -3,7 +3,12 @@ package handlers
 import (
 	"cenimatch/internal/infra/http/utils"
 	"cenimatch/internal/ports"
+	"errors"
 	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 )
 
 type MovieHandler struct {
@@ -16,7 +21,11 @@ func NewMovieHandler(repo ports.MovieRepository) *MovieHandler {
 
 func (h *MovieHandler) ListMovies() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		movies, err := h.repo.ListMovies(r.Context())
+		limit := intQuery(r, "limit", 30, 200)
+		offset := intQuery(r, "offset", 0, 1000000)
+		query := r.URL.Query().Get("q")
+
+		movies, err := h.repo.ListMovies(r.Context(), query, limit, offset)
 		if err != nil {
 			utils.InternalServerError(w, err.Error())
 			return
@@ -24,4 +33,99 @@ func (h *MovieHandler) ListMovies() http.HandlerFunc {
 
 		utils.Success(w, movies)
 	}
+}
+
+func (h *MovieHandler) SearchMovies() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limit := intQuery(r, "limit", 30, 200)
+		offset := intQuery(r, "offset", 0, 1000000)
+		query := r.URL.Query().Get("q")
+
+		movies, err := h.repo.ListMovies(r.Context(), query, limit, offset)
+		if err != nil {
+			utils.InternalServerError(w, err.Error())
+			return
+		}
+
+		utils.Success(w, movies)
+	}
+}
+
+func (h *MovieHandler) GetMovieByID() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			utils.BadRequest(w, "invalid movie id")
+			return
+		}
+
+		movie, err := h.repo.GetMovieByID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				utils.NotFound(w, "movie not found")
+				return
+			}
+			utils.InternalServerError(w, err.Error())
+			return
+		}
+
+		utils.Success(w, movie)
+	}
+}
+
+func (h *MovieHandler) GetRelatedMovies() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			utils.BadRequest(w, "invalid movie id")
+			return
+		}
+
+		limit := intQuery(r, "limit", 8, 50)
+		movies, err := h.repo.GetRelatedMovies(r.Context(), id, limit)
+		if err != nil {
+			utils.InternalServerError(w, err.Error())
+			return
+		}
+
+		utils.Success(w, movies)
+	}
+}
+
+func (h *MovieHandler) GetMovieCrew() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			utils.BadRequest(w, "invalid movie id")
+			return
+		}
+
+		crew, err := h.repo.GetMovieCrewByID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				utils.NotFound(w, "movie not found")
+				return
+			}
+			utils.InternalServerError(w, err.Error())
+			return
+		}
+
+		utils.Success(w, crew)
+	}
+}
+
+func intQuery(r *http.Request, key string, defaultValue int, max int) int {
+	raw := r.URL.Query().Get(key)
+	if raw == "" {
+		return defaultValue
+	}
+
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed < 0 {
+		return defaultValue
+	}
+	if parsed > max {
+		return max
+	}
+	return parsed
 }

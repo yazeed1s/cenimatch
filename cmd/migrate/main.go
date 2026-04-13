@@ -26,7 +26,7 @@ func main() {
 	defer p.Close()
 
 	m := migrator.New(p, "migration")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutForCommand(cmd))
 	defer cancel()
 
 	switch cmd {
@@ -42,6 +42,10 @@ func main() {
 		if err := m.CreateTables(ctx); err != nil {
 			log.Fatalf("create: %v", err)
 		}
+	case "indexes":
+		if err := m.CreateIndexes(ctx); err != nil {
+			log.Fatalf("indexes: %v", err)
+		}
 	case "status":
 		if err := status(ctx, m); err != nil {
 			log.Fatalf("status: %v", err)
@@ -52,6 +56,15 @@ func main() {
 		fmt.Printf("unknown: %s\n", cmd)
 		migrator.PrintHelp()
 		os.Exit(1)
+	}
+}
+
+func timeoutForCommand(cmd string) time.Duration {
+	switch cmd {
+	case "indexes", "create", "reset":
+		return 30 * time.Minute
+	default:
+		return 30 * time.Second
 	}
 }
 

@@ -34,7 +34,14 @@ func NewServer(port int, jwt ports.JWTGenerator, movieRepo ports.MovieRepository
 
 	r.Get("/health", handlers.Health())
 	movieHandler := handlers.NewMovieHandler(movieRepo)
-	r.Get("/movies", movieHandler.ListMovies())
+
+	r.Route("/api", func(api chi.Router) {
+		api.Get("/movies", movieHandler.ListMovies())
+		api.Get("/movies/search", movieHandler.SearchMovies())
+		api.Get("/movies/{id}", movieHandler.GetMovieByID())
+		api.Get("/movies/{id}/crew", movieHandler.GetMovieCrew())
+		api.Get("/movies/{id}/related", movieHandler.GetRelatedMovies())
+	})
 
 	// we can, later make the timeouts configurable
 	server := &http.Server{

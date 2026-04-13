@@ -62,6 +62,7 @@ func IMDbSources() []Source {
 		{Name: "imdb-title-basics", URL: "https://datasets.imdbws.com/title.basics.tsv.gz", Format: TSV},
 		{Name: "imdb-title-ratings", URL: "https://datasets.imdbws.com/title.ratings.tsv.gz", Format: TSV},
 		{Name: "imdb-title-crew", URL: "https://datasets.imdbws.com/title.crew.tsv.gz", Format: TSV},
+		{Name: "imdb-title-principals", URL: "https://datasets.imdbws.com/title.principals.tsv.gz", Format: TSV},
 		{Name: "imdb-name-basics", URL: "https://datasets.imdbws.com/name.basics.tsv.gz", Format: TSV},
 	}
 }

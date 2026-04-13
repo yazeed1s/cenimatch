@@ -25,3 +25,15 @@ type RawMovie struct {
 	RecommendationScore *float64 `json:"recommendation_score,omitempty"`
 	Explanation         *string  `json:"explanation,omitempty"`
 }
+
+type MovieCrewMember struct {
+	Name      string  `json:"name"`
+	Role      string  `json:"role"`
+	Job       *string `json:"job"`
+	Character *string `json:"character"`
+	Ordering  *int    `json:"ordering"`
+}
+
+type MovieCrew struct {
+	Members []MovieCrewMember `json:"members"`
+}
