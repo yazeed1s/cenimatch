@@ -1,36 +1,64 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import MovieCard from "../components/MovieCard";
-import { mockApi } from "../api/mockApi";
-// When ready: import { realApi as api } from "../api/realApi";
+import { realApi as api } from "../api/realApi";
+import type { MovieCrewMember } from "../api/realApi";
 import { MOODS } from "../types/movie";
 import type { Movie } from "../types/movie";
-
-const api = mockApi; // ← swap to realApi when backend is ready
 
 export default function MoviePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [movie, setMovie] = useState<Movie | null>(null);
+  const [crew, setCrew] = useState<MovieCrewMember[]>([]);
   const [related, setRelated] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+  const [relatedLoading, setRelatedLoading] = useState(false);
   const [rating, setRating] = useState(0);
   const [liked, setLiked] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
     setLoading(true);
+    setRelatedLoading(true);
     setRating(0);
     setLiked(false);
-    Promise.all([api.getMovieById(Number(id)), api.getRelatedMovies(Number(id))]).then(
-      ([mv, rel]) => {
+    setCrew([]);
+    setRelated([]);
+
+    api.getMovieById(Number(id))
+      .then((mv) => {
+        if (cancelled) return;
         setMovie(mv);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    api.getMovieCrew(Number(id))
+      .then((data) => {
+        if (cancelled) return;
+        setCrew(data.members ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setCrew([]);
+      });
+
+    api.getRelatedMovies(Number(id))
+      .then((rel) => {
+        if (cancelled) return;
         setRelated(rel);
-        setLoading(false);
-      }
-    );
+      })
+      .finally(() => {
+        if (!cancelled) setRelatedLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   async function handleRate(val: number) {
@@ -55,6 +83,12 @@ export default function MoviePage() {
       </div>
     );
   }
+
+  const displayRating = movie.rating.toFixed(1);
+
+  const actorCrew = crew.filter((member) => member.role === "actor");
+  const nonActorCrew = crew.filter((member) => member.role !== "actor");
+  const directorName = crew.find((member) => member.role === "director")?.name || movie.director;
 
   return (
     <div>
@@ -84,7 +118,7 @@ export default function MoviePage() {
               <h1 className="movie-title-lg">{movie.title}</h1>
               <div className="movie-meta-row">
                 <div className="movie-rating-lg">
-                  <StarIcon filled size={22} /> {movie.rating}
+                  <StarIcon filled size={22} /> {displayRating}
                   <small>/10</small>
                 </div>
                 <span className="meta-sep">·</span>
@@ -99,7 +133,7 @@ export default function MoviePage() {
               <p className="movie-plot">{movie.plot}</p>
               <div style={{ marginBottom: 20 }}>
                 <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8, fontWeight: 600, letterSpacing: 1.5, textTransform: "uppercase" }}>Director</div>
-                <div style={{ fontSize: 15 }}>{movie.director}</div>
+                <div style={{ fontSize: 15 }}>{directorName}</div>
               </div>
               {movie.mood.length > 0 && (
                 <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
@@ -141,18 +175,20 @@ export default function MoviePage() {
         <div className="cast-section">
           <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 700, marginBottom: 20 }}>Cast</div>
           <div className="cast-grid">
-            {movie.cast.map((name, i) => (
-              <div key={name} className="cast-card fade-in">
+            {actorCrew.map((member, i) => (
+              <div key={`${member.name}-${i}`} className="cast-card fade-in">
                 <div className="cast-avatar">{["🎭", "🎬", "⭐"][i % 3]}</div>
-                <div className="cast-name">{name}</div>
-                <div className="cast-role">Actor</div>
+                <div className="cast-name">{member.name}</div>
+                <div className="cast-role">{member.character || "Actor"}</div>
               </div>
             ))}
-            <div className="cast-card fade-in">
-              <div className="cast-avatar">🎥</div>
-              <div className="cast-name">{movie.director}</div>
-              <div className="cast-role">Director</div>
-            </div>
+            {nonActorCrew.map((member, i) => (
+              <div key={`${member.role}-${member.name}-${i}`} className="cast-card fade-in">
+                <div className="cast-avatar">🎥</div>
+                <div className="cast-name">{member.name}</div>
+                <div className="cast-role">{member.job || member.role}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -166,11 +202,17 @@ export default function MoviePage() {
               Discovered via Apache AGE graph traversal — shared director, cast &amp; thematic similarity
             </div>
           </div>
-          <div className="movie-scroller">
-            {related.map((m) => (
-              <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
-            ))}
-          </div>
+          {relatedLoading ? (
+            <div style={{ fontSize: 13, color: "var(--text3)" }}>loading related movies...</div>
+          ) : related.length === 0 ? (
+            <div style={{ fontSize: 13, color: "var(--text3)" }}>no related movies found yet.</div>
+          ) : (
+            <div className="movie-scroller">
+              {related.map((m) => (
+                <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

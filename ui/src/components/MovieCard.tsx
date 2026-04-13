@@ -10,6 +10,7 @@ interface MovieCardProps {
 export default function MovieCard({ movie, onClick, showExplanation = false }: MovieCardProps) {
   const [liked, setLiked] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const displayRating = movie.rating.toFixed(1);
 
   return (
     <div className="movie-card fade-in" onClick={() => onClick(movie)}>
@@ -34,7 +35,7 @@ export default function MovieCard({ movie, onClick, showExplanation = false }: M
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span className="rating-badge">
-            <StarIcon filled size={13} /> {movie.rating}
+            <StarIcon filled size={13} /> {displayRating}
           </span>
           <button
             className={`heart-btn ${liked ? "active" : ""}`}
@@ -48,7 +49,7 @@ export default function MovieCard({ movie, onClick, showExplanation = false }: M
       <div className="movie-card-body">
         <div className="movie-card-title">{movie.title}</div>
         <div className="movie-card-meta">
-          <span className="rating-badge"><StarIcon filled size={12} /> {movie.rating}</span>
+          <span className="rating-badge"><StarIcon filled size={12} /> {displayRating}</span>
           <span>{movie.year}</span>
         </div>
       </div>

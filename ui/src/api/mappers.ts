@@ -72,28 +72,44 @@ const MOOD_DISPLAY: Record<string, string> = {
   epic: "Epic",
 };
 
+function cleanNullableText(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const lowered = trimmed.toLowerCase();
+  if (lowered === "none" || lowered === "null") return null;
+  return trimmed;
+}
+
 function normalizeMood(raw: string): string {
   return MOOD_DISPLAY[raw.toLowerCase()] ?? raw;
 }
 
 export function mapMovie(raw: RawMovie): Movie {
+  const posterPath = cleanNullableText(raw.poster_path);
+  const releaseDate = cleanNullableText(raw.release_date);
+  const parsedYear = raw.release_year ?? (releaseDate ? new Date(releaseDate).getFullYear() : null);
+  const year = Number.isFinite(parsedYear) ? (parsedYear as number) : 0;
+
   return {
     id: raw.tmdb_id,
     title: raw.title,
-    year: raw.release_year ?? new Date(raw.release_date ?? "").getFullYear() ?? 0,
+    year,
     genre: raw.genres ?? [],
     rating: raw.vote_avg ?? 0,
     runtime: raw.runtime_min ?? 0,
-    language: raw.original_lang ?? "Unknown",
-    director: raw.director_name ?? "Unknown",
+    language: cleanNullableText(raw.original_lang) ?? "Unknown",
+    director: cleanNullableText(raw.director_name) ?? "Unknown",
     mood: (raw.mood_tags ?? []).map(normalizeMood),
-    poster: raw.poster_path
-      ? raw.poster_path.startsWith("http")
-        ? raw.poster_path
-        : `${TMDB_IMAGE_BASE}${raw.poster_path}`
+    poster: posterPath
+      ? posterPath.startsWith("http")
+        ? posterPath
+        : posterPath.startsWith("/")
+          ? `${TMDB_IMAGE_BASE}${posterPath}`
+          : ""
       : "",
-    plot: raw.overview ?? "",
-    mpaa: raw.mpaa_rating ?? "NR",
+    plot: cleanNullableText(raw.overview) ?? "",
+    mpaa: cleanNullableText(raw.mpaa_rating) ?? "NR",
     cast: raw.cast_names ?? [],
     tmdbId: raw.tmdb_id,
     explanation: raw.explanation,

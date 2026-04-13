@@ -1,16 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import MovieCard from "../components/MovieCard";
 import MoodSelector from "../components/MoodSelector";
-import { mockApi } from "../api/mockApi";
-// When ready: import { realApi as api } from "../api/realApi";
+import { realApi as api } from "../api/realApi";
 import type { Movie, User } from "../types/movie";
-import { MOCK_MOVIES } from "../api/mockApi";
 
-const api = mockApi; // ← swap to realApi when backend is ready
-
-const TRENDING = MOCK_MOVIES.slice(0, 5);
-const TOP_RATED = [...MOCK_MOVIES].sort((a, b) => b.rating - a.rating).slice(0, 6);
 
 interface HomePageProps {
   user: User | null;
@@ -18,17 +12,28 @@ interface HomePageProps {
 
 export default function HomePage({ user }: HomePageProps) {
   const [mood, setMood] = useState<string | null>(null);
-  const [recs, setRecs] = useState<Movie[]>([]);
+  const [catalog, setCatalog] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
     setLoading(true);
-    api.getRecommendations(undefined, mood).then((data) => {
-      setRecs(data);
-      setLoading(false);
-    });
-  }, [mood]);
+    api.listMovies(50)
+      .then((movies) => setCatalog(movies))
+      .catch(() => setCatalog([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const trending = useMemo(() => catalog.slice(0, 5), [catalog]);
+  const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating).slice(0, 6), [catalog]);
+  const recs = useMemo(() => {
+    if (!mood) return catalog.slice(0, 20);
+    const moodKey = mood.toLowerCase().replace(/[\s-]/g, "_");
+    const filtered = catalog.filter((movie) =>
+      movie.mood.some((value) => value.toLowerCase().replace(/[\s-]/g, "_") === moodKey),
+    );
+    return (filtered.length ? filtered : catalog).slice(0, 20);
+  }, [catalog, mood]);
 
   return (
     <div>
@@ -125,7 +130,7 @@ export default function HomePage({ user }: HomePageProps) {
             </button>
           </div>
           <div className="movie-scroller">
-            {TRENDING.map((m) => (
+            {trending.map((m) => (
               <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
             ))}
           </div>
@@ -139,7 +144,7 @@ export default function HomePage({ user }: HomePageProps) {
             <div className="row-title fade-in">Top Rated All Time</div>
           </div>
           <div className="movie-scroller">
-            {TOP_RATED.map((m) => (
+            {topRated.map((m) => (
               <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
             ))}
           </div>

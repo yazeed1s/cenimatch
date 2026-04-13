@@ -4,9 +4,10 @@ import type { User } from "../types/movie";
 
 interface NavbarProps {
   user: User | null;
+  onLogout: () => void;
 }
 
-export default function Navbar({ user }: NavbarProps) {
+export default function Navbar({ user, onLogout }: NavbarProps) {
   const [q, setQ] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
@@ -52,9 +53,18 @@ export default function Navbar({ user }: NavbarProps) {
         </div>
 
         <div className="navbar-actions">
-          {user && (
-            <button className="avatar-btn" title={user.name}>
-              {initials}
+          {user ? (
+            <>
+              <button className="btn btn-ghost btn-sm" onClick={onLogout}>
+                Log out
+              </button>
+              <button className="avatar-btn" title={user.name}>
+                {initials}
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-primary btn-sm" onClick={() => navigate("/signup")}>
+              Sign up
             </button>
           )}
         </div>

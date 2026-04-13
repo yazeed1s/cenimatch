@@ -1,20 +1,34 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter } from "react-router-dom";
 import AppRouter from "./routes/AppRouter";
-import OnboardingPage from "./pages/OnboardingPage";
 import type { User } from "./types/movie";
 
-export default function App() {
-  // In production: load from JWT / session / localStorage
-  const [user, setUser] = useState<User | null>(null);
+const USER_STORAGE_KEY = "cenimatch.user";
 
-  if (!user) {
-    return <OnboardingPage onComplete={(u) => setUser(u)} />;
+function loadStoredUser(): User | null {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as User;
+  } catch {
+    return null;
   }
+}
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(() => loadStoredUser());
+
+  useEffect(() => {
+    if (!user) {
+      localStorage.removeItem(USER_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+  }, [user]);
 
   return (
     <BrowserRouter>
-      <AppRouter user={user} />
+      <AppRouter user={user} onUserChange={setUser} />
     </BrowserRouter>
   );
 }

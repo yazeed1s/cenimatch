@@ -9,6 +9,25 @@ let _accessToken: string | null = null;
 export function setAccessToken(token: string) { _accessToken = token; }
 export function clearAccessToken() { _accessToken = null; }
 
+interface ApiEnvelope<T> {
+  success: boolean;
+  data: T;
+  error?: { code: string };
+}
+
+function unwrapEnvelope<T>(raw: unknown): T {
+  if (!raw || typeof raw !== "object") return raw as T;
+
+  const maybeEnvelope = raw as Partial<ApiEnvelope<T>>;
+  if (typeof maybeEnvelope.success === "boolean") {
+    if (!maybeEnvelope.success) {
+      throw new Error(maybeEnvelope.error?.code ?? "request_failed");
+    }
+    return maybeEnvelope.data as T;
+  }
+
+  return raw as T;
+}
 
 async function fetchJSON<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
@@ -29,7 +48,8 @@ async function fetchJSON<T>(path: string, options: RequestInit = {}): Promise<T>
 
   if (res.status === 204) return {} as T;
 
-  return res.json() as Promise<T>;
+  const raw = await res.json();
+  return unwrapEnvelope<T>(raw);
 }
 
 
@@ -44,6 +64,14 @@ export interface RegisterPayload {
   username: string;
   email: string;
   password: string;
+}
+
+export interface MovieCrewMember {
+  name: string;
+  role: string;
+  job: string | null;
+  character: string | null;
+  ordering: number | null;
 }
 
 export const authApi = {
@@ -69,24 +97,29 @@ export const authApi = {
 
 
 export const realApi = {
-  getRecommendations: async (_userId: string | undefined, mood: string | null): Promise<Movie[]> => {
-    const params = new URLSearchParams({ limit: "20" });
-    
-    if (mood) {
-      const dbMood = mood.toLowerCase().replace("-", "_").replace(" ", "_");
-      params.set("mood", dbMood);
-    }
-    const raws = await fetchJSON<RawMovie[]>(`/api/recommendations?${params}`);
+  listMovies: async (limit = 50, offset = 0): Promise<Movie[]> => {
+    const raws = await fetchJSON<RawMovie[]>(`/api/movies?limit=${limit}&offset=${offset}`);
     return mapMovies(raws);
   },
 
-  searchMovies: async (query: string): Promise<Movie[]> => {
-    if (!query.trim()) {
-      const raws = await fetchJSON<RawMovie[]>("/api/movies?limit=50");
-      return mapMovies(raws);
-    }
-    const params = new URLSearchParams({ q: query });
-    const raws = await fetchJSON<RawMovie[]>(`/api/movies/search?${params}`);
+  getRecommendations: async (_userId: string | undefined, mood: string | null): Promise<Movie[]> => {
+    const raws = await fetchJSON<RawMovie[]>("/api/movies?limit=50");
+    const movies = mapMovies(raws);
+    if (!mood) return movies.slice(0, 20);
+
+    const moodKey = mood.toLowerCase().replace(/[\s-]/g, "_");
+    const filtered = movies.filter((movie) =>
+      movie.mood.some((value) => value.toLowerCase().replace(/[\s-]/g, "_") === moodKey),
+    );
+    return (filtered.length ? filtered : movies).slice(0, 20);
+  },
+
+  searchMovies: async (query: string, limit = 50, offset = 0): Promise<Movie[]> => {
+    const trimmed = query.trim();
+    const path = trimmed
+      ? `/api/movies/search?q=${encodeURIComponent(trimmed)}&limit=${limit}&offset=${offset}`
+      : `/api/movies?limit=${limit}&offset=${offset}`;
+    const raws = await fetchJSON<RawMovie[]>(path);
     return mapMovies(raws);
   },
 
@@ -102,12 +135,24 @@ export const realApi = {
 
   getRelatedMovies: async (movieId: number): Promise<Movie[]> => {
     try {
-      const raws = await fetchJSON<RawMovie[]>(`/api/movies/${movieId}/related`);
-      return mapMovies(raws);
+      const raws = await fetchJSON<RawMovie[]>(`/api/movies/${movieId}/related?limit=4`);
+      const related = mapMovies(raws);
+      if (related.length > 0) return related;
+
+      const fallbackRows = await fetchJSON<RawMovie[]>("/api/movies?limit=20");
+      return mapMovies(fallbackRows).filter((movie) => movie.id !== movieId).slice(0, 4);
     } catch {
-      return [];
+      try {
+        const fallbackRows = await fetchJSON<RawMovie[]>("/api/movies?limit=20");
+        return mapMovies(fallbackRows).filter((movie) => movie.id !== movieId).slice(0, 4);
+      } catch {
+        return [];
+      }
     }
   },
+
+  getMovieCrew: (movieId: number): Promise<{ members: MovieCrewMember[] }> =>
+    fetchJSON(`/api/movies/${movieId}/crew`),
 
   getAnalytics: async (): Promise<AnalyticsData> => {
 
@@ -135,18 +180,26 @@ export const realApi = {
 
  
   submitFeedback: async (movieId: number, rating: number): Promise<{ success: boolean }> => {
-    await fetchJSON("/api/feedback", {
-      method: "POST",
-      body: JSON.stringify({ movie_id: movieId, rating }),
-    });
+    try {
+      await fetchJSON("/api/feedback", {
+        method: "POST",
+        body: JSON.stringify({ movie_id: movieId, rating }),
+      });
+    } catch {
+      // keep ui usable until feedback endpoints are added
+    }
     return { success: true };
   },
 
   markNotInterested: async (movieId: number): Promise<{ success: boolean }> => {
-    await fetchJSON("/api/feedback/not-interested", {
-      method: "POST",
-      body: JSON.stringify({ movie_id: movieId }),
-    });
+    try {
+      await fetchJSON("/api/feedback/not-interested", {
+        method: "POST",
+        body: JSON.stringify({ movie_id: movieId }),
+      });
+    } catch {
+      // keep ui usable until feedback endpoints are added
+    }
     return { success: true };
   },
 

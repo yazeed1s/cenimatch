@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import MovieCard from "../components/MovieCard";
-import { mockApi } from "../api/mockApi";
-// When ready: import { realApi as api } from "../api/realApi";
+import { realApi as api } from "../api/realApi";
 import { MOODS, GENRES } from "../types/movie";
 import type { Movie } from "../types/movie";
 
-const api = mockApi; // ← swap to realApi when backend is ready
+const PAGE_SIZE = 50;
 
 export default function SearchPage() {
   const [searchParams] = useSearchParams();
@@ -18,6 +17,8 @@ export default function SearchPage() {
   const [genreFilter, setGenreFilter] = useState("");
   const [yearFilter, setYearFilter] = useState("");
   const [moodFilter, setMoodFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
 
   // NL search state
   const [nlQuery, setNlQuery] = useState("");
@@ -28,18 +29,24 @@ export default function SearchPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    runSearch(initialQuery);
+    runSearch(initialQuery, 1);
   }, []);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runSearch(query), 300);
+    debounceRef.current = setTimeout(() => {
+      setPage(1);
+      runSearch(query, 1);
+    }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query, genreFilter, moodFilter, yearFilter]);
 
-  async function runSearch(q: string) {
+  async function runSearch(q: string, pageNumber: number) {
     setLoading(true);
-    let data = await api.searchMovies(q);
+    const offset = (pageNumber - 1) * PAGE_SIZE;
+    const raw = await api.searchMovies(q, PAGE_SIZE, offset);
+    setHasMore(raw.length === PAGE_SIZE);
+    let data = raw;
     if (genreFilter) data = data.filter((m) => m.genre.includes(genreFilter));
     if (moodFilter) data = data.filter((m) => m.mood.includes(moodFilter));
     if (yearFilter) data = data.filter((m) => String(m.year).startsWith(yearFilter));
@@ -54,7 +61,14 @@ export default function SearchPage() {
     const { sql, results: nlResults } = await api.naturalLanguageSearch(nlQuery);
     setGeneratedSQL(sql);
     setResults(nlResults);
+    setHasMore(false);
     setNlLoading(false);
+  }
+
+  async function goToPage(nextPage: number) {
+    if (nextPage < 1) return;
+    setPage(nextPage);
+    await runSearch(query, nextPage);
   }
 
   return (
@@ -149,6 +163,17 @@ export default function SearchPage() {
                 <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
               ))}
             </div>
+            {!generatedSQL && (
+              <div style={{ marginTop: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                <button className="btn btn-ghost btn-sm" disabled={page === 1 || loading} onClick={() => goToPage(page - 1)}>
+                  ← Previous
+                </button>
+                <div style={{ fontSize: 13, color: "var(--text3)" }}>Page {page}</div>
+                <button className="btn btn-ghost btn-sm" disabled={!hasMore || loading} onClick={() => goToPage(page + 1)}>
+                  Next →
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
