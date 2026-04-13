@@ -1,4 +1,6 @@
 -- schema-01.sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TYPE tag_source AS ENUM ('llm', 'manual');
 CREATE TYPE crew_role AS ENUM ('director', 'actor', 'writer', 'producer');
 CREATE TYPE mood_type AS ENUM (
@@ -52,6 +54,7 @@ CREATE TABLE movie_tags (
 );
 CREATE INDEX idx_movie_tags_movie ON movie_tags(movie_id);
 CREATE INDEX idx_movie_tags_key ON movie_tags(tag_key);
+CREATE INDEX idx_movie_tags_movie_key ON movie_tags(movie_id, tag_key);
 CREATE TABLE persons (
     imdb_id VARCHAR(20) PRIMARY KEY,
     primary_name TEXT NOT NULL,
@@ -71,6 +74,11 @@ CREATE TABLE movie_crew (
 );
 CREATE INDEX idx_movie_crew_movie ON movie_crew(movie_id);
 CREATE INDEX idx_movie_crew_person ON movie_crew(person_id);
+CREATE INDEX idx_movie_crew_movie_role_ordering ON movie_crew(movie_id, role, ordering);
+
+CREATE INDEX idx_movies_title_trgm ON movies USING GIN (lower(title) gin_trgm_ops);
+CREATE INDEX idx_movies_original_title_trgm ON movies USING GIN (lower(original_title) gin_trgm_ops);
+CREATE INDEX idx_movie_genres_genre_movie ON movie_genres(genre_id, movie_id);
 
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -108,6 +116,7 @@ CREATE TABLE watch_history (
     completed BOOLEAN DEFAULT FALSE
 );
 CREATE INDEX idx_watch_user ON watch_history(user_id);
+CREATE INDEX idx_watch_movie ON watch_history(movie_id);
 CREATE TABLE user_feedback (
     id SERIAL PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -117,6 +126,7 @@ CREATE TABLE user_feedback (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (user_id, movie_id)
 );
+CREATE INDEX idx_feedback_movie ON user_feedback(movie_id);
 CREATE TABLE recommendations (
     id SERIAL PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -128,6 +138,7 @@ CREATE TABLE recommendations (
 );
 CREATE INDEX idx_recs_user ON recommendations(user_id);
 CREATE INDEX idx_recs_session ON recommendations(session_id);
+CREATE INDEX idx_recs_movie ON recommendations(movie_id);
 
 CREATE TABLE activity_events (
     id SERIAL PRIMARY KEY,
@@ -141,6 +152,7 @@ CREATE TABLE activity_events (
 );
 CREATE INDEX idx_activity_time ON activity_events(created_at);
 CREATE INDEX idx_activity_city ON activity_events(city_state);
+CREATE INDEX idx_activity_movie ON activity_events(movie_id);
 
 CREATE TABLE enrichment_queue (
     id SERIAL PRIMARY KEY,
@@ -151,6 +163,7 @@ CREATE TABLE enrichment_queue (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE INDEX idx_enrichment_queue_movie ON enrichment_queue(movie_id);
 
 CREATE OR REPLACE FUNCTION queue_enrichment() RETURNS TRIGGER AS $$ BEGIN
 INSERT INTO enrichment_queue (movie_id)

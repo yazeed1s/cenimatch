@@ -149,6 +149,20 @@ func (m *Migrator) CreateTables(ctx context.Context) error {
 	return nil
 }
 
+func (m *Migrator) CreateIndexes(ctx context.Context) error {
+	fmt.Println("creating indexes from schema-02-indexes.sql")
+	p := filepath.Join(m.dir, "schema-02-indexes.sql")
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return fmt.Errorf("read index schema: %w", err)
+	}
+	if _, err = m.pool.Exec(ctx, string(data)); err != nil {
+		return fmt.Errorf("create indexes: %w", err)
+	}
+	fmt.Println("indexes created")
+	return nil
+}
+
 func (m *Migrator) Reset(ctx context.Context) error {
 	fmt.Println("resetting database")
 
@@ -223,6 +237,7 @@ Commands:
   reset    - drop all tables and recreate from schema
   drop     - drop all tables and types dynamically
   create   - create tables from schema
+  indexes  - create indexes from schema-02-indexes.sql
   status   - show database status
   help     - show this 
 
@@ -231,6 +246,7 @@ Usage:
 
 Examples:
   go run cmd/migrate/main.go reset
+  go run cmd/migrate/main.go indexes
   go run cmd/migrate/main.go status
 `)
 }
