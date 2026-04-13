@@ -232,7 +232,7 @@ SELECT DISTINCT
   m.tmdb_id,
   sp.nconst,
   'actor'::crew_role,
-  coalesce(nullif(sp.job, ''), nullif(sp.characters, '')),
+  coalesce(nullif(sp.characters, ''), nullif(sp.job, '')),
   NULLIF(sp.ordering, '\N')::INT
 FROM staging_principals sp
 JOIN movies m ON m.imdb_id = sp.tconst
