@@ -47,6 +47,19 @@ CREATE TEMP TABLE staging_crew (
   writers TEXT
 ) ON COMMIT DROP;
 
+CREATE TEMP TABLE staging_principals (
+  tconst TEXT,
+  ordering TEXT,
+  nconst TEXT,
+  category TEXT,
+  job TEXT,
+  characters TEXT
+) ON COMMIT DROP;
+
+CREATE TEMP TABLE staging_principals_raw (
+  line TEXT
+) ON COMMIT DROP;
+
 CREATE TEMP TABLE staging_names (
   nconst TEXT,
   primary_name TEXT,
@@ -59,7 +72,19 @@ CREATE TEMP TABLE staging_names (
 \copy staging_tmdb FROM '/data/raw/tmdb-movies/TMDB_movie_dataset_v11.csv' CSV HEADER;
 \copy staging_ratings FROM '/data/raw/imdb-title-ratings/title.ratings.tsv' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N', HEADER true, QUOTE E'\b');
 \copy staging_crew FROM '/data/raw/imdb-title-crew/title.crew.tsv' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N', HEADER true, QUOTE E'\b');
+\copy staging_principals_raw FROM '/data/raw/imdb-title-principals/title.principals.tsv' WITH (FORMAT text, DELIMITER E'\x01');
 \copy staging_names FROM '/data/raw/imdb-name-basics/name.basics.tsv' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N', HEADER true, QUOTE E'\b');
+
+INSERT INTO staging_principals (tconst, ordering, nconst, category, job, characters)
+SELECT
+  split_part(line, E'\t', 1),
+  split_part(line, E'\t', 2),
+  split_part(line, E'\t', 3),
+  split_part(line, E'\t', 4),
+  NULLIF(split_part(line, E'\t', 5), '\N'),
+  NULLIF(split_part(line, E'\t', 6), '\N')
+FROM staging_principals_raw
+WHERE split_part(line, E'\t', 1) <> 'tconst';
 
 -- Movies
 INSERT INTO movies (
@@ -113,20 +138,28 @@ FROM (
    AND sr.average_rating <> '\N'
   WHERE s.imdb_id IS NOT NULL AND s.imdb_id <> ''
 ) s
-WHERE rating IS NOT NULL
+WHERE
+  rating IS NOT NULL
+  AND lower(coalesce(s.adult, 'false')) NOT IN ('true', '1', 't')
+  AND lower(coalesce(s.title, '')) !~ '(porn|xxx|hentai|erotic|adult|nsfw|milf|incest|blowjob|hardcore)'
+  AND lower(coalesce(s.overview, '')) !~ '(porn|xxx|hentai|erotic|adult|nsfw|milf|incest|blowjob|hardcore)'
 ON CONFLICT (tmdb_id) DO NOTHING;
 
 -- At this point, only movies with a valid IMDb rating were inserted.
 
--- Persons (only those referenced by crew)
+-- persons (those referenced by crew and principals)
 WITH needed AS (
   SELECT DISTINCT person_id
   FROM (
     SELECT unnest(string_to_array(NULLIF(directors, '\N'), ',')) AS person_id FROM staging_crew
     UNION
     SELECT unnest(string_to_array(NULLIF(writers, '\N'), ',')) AS person_id FROM staging_crew
+    UNION
+    SELECT nconst AS person_id
+    FROM staging_principals
+    WHERE category IN ('actor', 'actress', 'self', 'director', 'writer', 'producer')
   ) u
-  WHERE person_id IS NOT NULL AND person_id <> ''
+  WHERE person_id IS NOT NULL AND person_id <> '' AND person_id <> '\N'
 )
 INSERT INTO persons (imdb_id, primary_name, birth_year, death_year, primary_profession, known_for_titles)
 SELECT
@@ -144,6 +177,7 @@ ON CONFLICT (imdb_id) DO NOTHING;
 WITH g AS (
   SELECT DISTINCT TRIM(g) AS name
   FROM staging_tmdb s
+  JOIN movies m ON m.tmdb_id = s.id::INT
   CROSS JOIN LATERAL unnest(string_to_array(s.genres, ',')) AS g
   WHERE s.genres IS NOT NULL AND s.genres <> ''
 )
@@ -157,6 +191,7 @@ SELECT DISTINCT
   s.id::INT,
   g.id
 FROM staging_tmdb s
+JOIN movies m ON m.tmdb_id = s.id::INT
 CROSS JOIN LATERAL unnest(string_to_array(s.genres, ',')) AS gname
 JOIN genres g ON g.name = TRIM(gname)
 JOIN movies m ON m.tmdb_id = s.id::INT  -- only map for movies we kept
@@ -189,6 +224,46 @@ JOIN movies m ON m.imdb_id = c.tconst
 CROSS JOIN LATERAL unnest(string_to_array(NULLIF(c.writers, '\N'), ',')) WITH ORDINALITY AS w(person_id, ord)
 JOIN persons p ON p.imdb_id = w.person_id
 WHERE c.writers IS NOT NULL AND c.writers <> '\N'
+ON CONFLICT DO NOTHING;
+
+-- movie crew: actors
+INSERT INTO movie_crew (movie_id, person_id, role, character, ordering)
+SELECT DISTINCT
+  m.tmdb_id,
+  sp.nconst,
+  'actor'::crew_role,
+  coalesce(nullif(sp.job, ''), nullif(sp.characters, '')),
+  NULLIF(sp.ordering, '\N')::INT
+FROM staging_principals sp
+JOIN movies m ON m.imdb_id = sp.tconst
+JOIN persons p ON p.imdb_id = sp.nconst
+WHERE
+  sp.category IN ('actor', 'actress', 'self')
+  AND sp.nconst IS NOT NULL
+  AND sp.nconst <> ''
+  AND sp.nconst <> '\N'
+ON CONFLICT DO NOTHING;
+
+-- movie crew: producers, directors, and writers with job labels
+INSERT INTO movie_crew (movie_id, person_id, role, character, ordering)
+SELECT DISTINCT
+  m.tmdb_id,
+  sp.nconst,
+  CASE
+    WHEN sp.category = 'director' THEN 'director'::crew_role
+    WHEN sp.category = 'writer' THEN 'writer'::crew_role
+    ELSE 'producer'::crew_role
+  END,
+  coalesce(nullif(sp.job, ''), nullif(sp.characters, '')),
+  NULLIF(sp.ordering, '\N')::INT
+FROM staging_principals sp
+JOIN movies m ON m.imdb_id = sp.tconst
+JOIN persons p ON p.imdb_id = sp.nconst
+WHERE
+  sp.category IN ('director', 'writer', 'producer')
+  AND sp.nconst IS NOT NULL
+  AND sp.nconst <> ''
+  AND sp.nconst <> '\N'
 ON CONFLICT DO NOTHING;
 
 COMMIT;
