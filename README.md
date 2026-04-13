@@ -57,6 +57,7 @@ Inside psql:
 ```sql
 CREATE EXTENSION IF NOT EXISTS postgis;
 SELECT PostGIS_Version();
+\q
 ```
 
 ### 4. run the schema
