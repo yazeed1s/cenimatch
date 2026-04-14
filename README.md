@@ -117,6 +117,7 @@ starts the api on whatever port is in your `.env`. hit `localhost:8080/health` t
 | `./run.sh migrate seed`  | run `migration/seed.sh` inside the db container     |
 | `./run.sh build`         | build everything                                    |
 | `./run.sh psql`          | run psql terminal                                   | 
+|`\q`                      | exit psql terminal                                  |
 
 ## project structure
 
