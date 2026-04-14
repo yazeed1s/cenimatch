@@ -171,6 +171,7 @@ SELECT
   NULLIF(n.known_for_titles, '\N')
 FROM staging_names n
 JOIN needed ON needed.person_id = n.nconst
+WHERE n.primary_name IS NOT NULL AND n.primary_name <> '\\N' AND n.primary_name <> ''
 ON CONFLICT (imdb_id) DO NOTHING;
 
 -- Genres
