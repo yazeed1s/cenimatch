@@ -49,7 +49,7 @@ sudo systemctl stop postgresql
 
 ### 3. enable PostGIS
 ```bash
-docker exec -it cenimatch-db psql -U u -d cenimatch-db
+./run.sh psql
 ```
 
 Inside psql (only run this once):
