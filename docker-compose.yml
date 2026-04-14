@@ -1,6 +1,6 @@
 services:
   db:
-    image: apache/age:release_PG16_1.6.0
+    build: .
     container_name: cenimatch-db
     environment:
       POSTGRES_USER: u

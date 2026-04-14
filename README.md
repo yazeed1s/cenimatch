@@ -6,6 +6,15 @@
 - docker (for postgres)
 - a kaggle account (for downloading datasets)
 
+## database (IMPORTANT UPDATE)
+
+This project uses a custom PostgreSQL image with:
+
+Apache AGE (graph queries)
+PostGIS (spatial queries)
+
+So we do NOT use vanilla Postgres anymore.
+
 ## setup
 
 ### 1. env file
@@ -32,13 +41,26 @@ to get a kaggle token go to kaggle.com/settings and click "Create New Token".
 make db
 ```
 
-this runs postgres 16 in docker on port 5432. if you already have postgres running locally, stop it first:
+this runs postgres 16 in docker on port 5432 with Apache AGE and PostGIS. if you already have postgres running locally, stop it first:
 
 ```bash
 sudo systemctl stop postgresql
 ```
 
-### 3. run the schema
+### 3. enable PostGIS
+```bash
+./run.sh psql
+```
+
+Inside psql (only run this once):
+
+```sql
+CREATE EXTENSION IF NOT EXISTS postgis;
+SELECT PostGIS_Version();
+\q
+```
+
+### 4. run the schema
 
 ```bash
 ./run.sh migrate create
@@ -50,7 +72,7 @@ this creates all the tables. you can check with:
 ./run.sh migrate status
 ```
 
-### 4. download datasets
+### 5. download datasets
 
 ```bash
 ./run.sh dl
@@ -66,7 +88,7 @@ to download only specific sources:
 ./run.sh dl --list
 ```
 
-### 5. seed data
+### 6. seed data
 
 to load the TMDB/IMDb seed data (expects files in `data/raw/` mounted into the db container):
 
@@ -74,7 +96,7 @@ to load the TMDB/IMDb seed data (expects files in `data/raw/` mounted into the d
 ./run.sh migrate seed
 ```
 
-### 6. start the server
+### 7. start the server
 
 ```bash
 ./run.sh app
@@ -94,6 +116,8 @@ starts the api on whatever port is in your `.env`. hit `localhost:8080/health` t
 | `./run.sh migrate <cmd>` | build and run migrations (reset/drop/create/status) |
 | `./run.sh migrate seed`  | run `migration/seed.sh` inside the db container     |
 | `./run.sh build`         | build everything                                    |
+| `./run.sh psql`          | run psql terminal                                   | 
+|`\q`                      | exit psql terminal                                  |
 
 ## project structure
 

@@ -23,6 +23,9 @@ case "${1:-}" in
     make -C "$DIR" migrate
     "$BIN/migrate" "$@"
     ;;
+  psql)
+    docker exec -it cenimatch-db psql -U u -d cenimatch-db
+    ;;
   build)
     make -C "$DIR" all
     echo "built → $BIN/"
