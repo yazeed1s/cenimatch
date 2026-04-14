@@ -47,12 +47,12 @@ this runs postgres 16 in docker on port 5432 with Apache AGE and PostGIS. if you
 sudo systemctl stop postgresql
 ```
 
-### 3. enable PostGIS (first time only)
+### 3. enable PostGIS
 ```bash
 docker exec -it cenimatch-db psql -U u -d cenimatch-db
 ```
 
-Inside psql:
+Inside psql (only run this once):
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS postgis;
@@ -116,6 +116,7 @@ starts the api on whatever port is in your `.env`. hit `localhost:8080/health` t
 | `./run.sh migrate <cmd>` | build and run migrations (reset/drop/create/status) |
 | `./run.sh migrate seed`  | run `migration/seed.sh` inside the db container     |
 | `./run.sh build`         | build everything                                    |
+| `./run.sh psql`          | run psql terminal                                   | 
 
 ## project structure
 
