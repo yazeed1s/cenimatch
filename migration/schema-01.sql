@@ -136,7 +136,7 @@ CREATE TABLE user_locations (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     location GEOGRAPHY(Point, 4326) NOT NULL,
     city TEXT,
-    country TEXT,
+    state TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX idx_user_locations_geom
