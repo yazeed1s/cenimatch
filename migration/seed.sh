@@ -110,7 +110,7 @@ INSERT INTO movies (
 SELECT
   id::INT,
   NULLIF(imdb_id, ''),
-  NULL,
+  rating,
   title,
   NULLIF(original_title, ''),
   rd,
