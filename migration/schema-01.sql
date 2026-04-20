@@ -124,9 +124,27 @@ CREATE TABLE user_feedback (
     rating FLOAT,
     not_interested BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    location GEOGRAPHY(Point, 4326),
     UNIQUE (user_id, movie_id)
 );
 CREATE INDEX idx_feedback_movie ON user_feedback(movie_id);
+CREATE INDEX idx_user_feedback_location
+ON user_feedback
+USING GIST (location);
+CREATE TABLE user_locations (
+    id SERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    location GEOGRAPHY(Point, 4326) NOT NULL,
+    city TEXT,
+    state TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_user_locations_geom
+ON user_locations
+USING GIST (location);
+CREATE INDEX idx_user_locations_user_id
+ON user_locations (user_id);
+
 CREATE TABLE recommendations (
     id SERIAL PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
