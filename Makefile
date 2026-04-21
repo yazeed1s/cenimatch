@@ -14,7 +14,6 @@ migrate:
 	go build -o $(BIN_DIR)/migrate ./cmd/migrate/
 
 db:
-	docker compose down -v
 	docker compose up --build -d
 
 db-stop:

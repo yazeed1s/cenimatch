@@ -1,0 +1,10 @@
+.git
+node_modules
+ui/node_modules
+ui/dist
+ui/.vite
+bin/
+data/
+*.tsv
+*.tsv.gz
+py/__pycache__

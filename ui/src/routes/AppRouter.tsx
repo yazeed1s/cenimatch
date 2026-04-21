@@ -6,6 +6,7 @@ import DashboardPage from "../pages/DashboardPage";
 import OnboardingPage from "../pages/OnboardingPage";
 import Navbar from "../components/Navbar";
 import type { User } from "../types/movie";
+import { authApi } from "../api/realApi";
 
 interface AppRouterProps {
   user: User | null;
@@ -26,9 +27,18 @@ function SignupRoute({ onComplete }: { onComplete: (user: User) => void }) {
 }
 
 export default function AppRouter({ user, onUserChange }: AppRouterProps) {
+  const handleLogout = async () => {
+    try {
+      await authApi.logout();
+    } catch (e) {
+      // ignore
+    }
+    onUserChange(null);
+  };
+
   return (
     <div className="app">
-      <Navbar user={user} onLogout={() => onUserChange(null)} />
+      <Navbar user={user} onLogout={handleLogout} />
       <main className="main-content">
         <Routes>
           <Route path="/"           element={<HomePage user={user} />} />

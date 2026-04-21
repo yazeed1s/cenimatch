@@ -34,15 +34,18 @@ export interface User {
   memberSince: string;
 }
 
-// Sent to POST /api/users/onboard
+// sent to POST /api/auth/register, then POST /api/users/onboard
 export interface UserOnboardingData {
   name: string;
   email: string;
-  password: string;     // required for real auth
+  password: string;
   genres: string[];
   mood: string;
-  likedMovies: string[];
-  dislikedMovies: string[];
+  likedMovieIds: number[];    // tmdb_ids from the db
+  dislikedMovieIds: number[]; // tmdb_ids from the db
+  runtimePref?: number;
+  decadeLow?: number;
+  decadeHigh?: number;
 }
 
 export interface AnalyticsData {

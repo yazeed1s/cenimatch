@@ -5,3 +5,5 @@ data/
 /bin
 .DS_Store
 backup.sql*
+report.tex
+ui/tsconfig.tsbuildinfo

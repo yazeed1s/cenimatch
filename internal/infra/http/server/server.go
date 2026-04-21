@@ -3,6 +3,7 @@ package server
 import (
 	"cenimatch/internal/infra/http/handlers"
 	"cenimatch/internal/ports"
+	"cenimatch/internal/service"
 	"context"
 	"fmt"
 	"net"
@@ -16,12 +17,17 @@ import (
 )
 
 type Server struct {
-	router       *chi.Mux
-	server       *http.Server
-	jwtGenerator ports.JWTGenerator
+	router *chi.Mux
+	server *http.Server
 }
 
-func NewServer(port int, jwt ports.JWTGenerator, movieRepo ports.MovieRepository) *Server {
+func NewServer(
+	port int,
+	jwt ports.JWTGenerator,
+	authService *service.AuthService,
+	onboardingService *service.OnboardingService,
+	movieRepo ports.MovieRepository,
+) *Server {
 
 	r := chi.NewRouter()
 	cors := custommiddleware.DefaultCORSConfig()
@@ -33,18 +39,34 @@ func NewServer(port int, jwt ports.JWTGenerator, movieRepo ports.MovieRepository
 	r.Use(middleware.RealIP)
 
 	r.Get("/health", handlers.Health())
+
 	movieHandler := handlers.NewMovieHandler(movieRepo)
+	authHandler := handlers.NewAuthHandler(authService)
+	onboardingHandler := handlers.NewOnboardingHandler(onboardingService)
 
 	r.Route("/api", func(api chi.Router) {
+		// public routes - no auth required
+		api.Post("/auth/register", authHandler.Register())
+		api.Post("/auth/signup", authHandler.Signup())
+		api.Post("/auth/login", authHandler.Login())
+		api.Post("/auth/refresh", authHandler.Refresh())
+		api.Post("/auth/logout", authHandler.Logout())
+
 		api.Get("/movies", movieHandler.ListMovies())
 		api.Get("/movies/search", movieHandler.SearchMovies())
 		api.Get("/movies/{id}", movieHandler.GetMovieByID())
 		api.Get("/movies/{id}/crew", movieHandler.GetMovieCrew())
 		api.Get("/movies/{id}/related", movieHandler.GetRelatedMovies())
+
+		// protected routes - auth required
+		api.Group(func(protected chi.Router) {
+			protected.Use(custommiddleware.Auth(jwt))
+			protected.Post("/users/onboard", onboardingHandler.SaveOnboarding())
+		})
 	})
 
 	// we can, later make the timeouts configurable
-	server := &http.Server{
+	s := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
@@ -53,9 +75,8 @@ func NewServer(port int, jwt ports.JWTGenerator, movieRepo ports.MovieRepository
 	}
 
 	return &Server{
-		router:       r,
-		server:       server,
-		jwtGenerator: jwt,
+		router: r,
+		server: s,
 	}
 }
 
