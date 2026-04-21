@@ -1,0 +1,9 @@
+.git
+node_modules
+ui/node_modules
+ui/dist
+ui/.vite
+*.tsv
+*.tsv.gz
+data/
+py/__pycache__
