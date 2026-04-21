@@ -205,24 +205,39 @@ export const realApi = {
 
 
   onboardUser: async (data: UserOnboardingData): Promise<User> => {
-    const payload = {
-      username: data.name.toLowerCase().replace(/\s+/g, "_"),
-      email: data.email,
-      password: data.password ?? "changeme123",   // collected in onboarding form
-      genre_weights: Object.fromEntries(data.genres.map((g) => [g, 1.0])),
-      default_mood: data.mood.toLowerCase().replace(/-/g, "_").replace(/\s/g, "_"),
-      liked_titles: data.likedMovies,
-      disliked_titles: data.dislikedMovies,
-    };
+    // phase 1 — register and get access token
+    const authRes = await fetchJSON<{
+      user: { id: string; username: string; email: string; created_at: string };
+      access_token: string;
+      refresh_token: string;
+    }>("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        username: data.name.toLowerCase().replace(/\s+/g, "_"),
+        email: data.email,
+        password: data.password,
+      }),
+    });
 
-    const res = await fetchJSON<LoginResponse & { user: User }>(
-      "/api/users/onboard",
-      { method: "POST", body: JSON.stringify(payload) }
-    );
+    if (authRes.access_token) setAccessToken(authRes.access_token);
 
-    if (res.access_token) setAccessToken(res.access_token);
+    // phase 2 — save onboarding preferences (authenticated)
+    const moodKey = data.mood.toLowerCase().replace(/-/g, "_").replace(/\s/g, "_");
+    await fetchJSON("/api/users/onboard", {
+      method: "POST",
+      body: JSON.stringify({
+        genres: data.genres,
+        default_mood: moodKey,
+        liked_ids: data.likedMovieIds,
+        disliked_ids: data.dislikedMovieIds,
+        runtime_pref: data.runtimePref ?? null,
+        decade_low: data.decadeLow ?? null,
+        decade_high: data.decadeHigh ?? null,
+      }),
+    });
 
-    return res.user ?? {
+    return {
+      id: authRes.user?.id,
       name: data.name,
       email: data.email,
       avatar: null,
