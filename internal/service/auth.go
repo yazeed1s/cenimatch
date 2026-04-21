@@ -5,6 +5,7 @@ import (
 	"cenimatch/internal/infra/security"
 	"cenimatch/internal/ports"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -84,6 +85,84 @@ func (s *AuthService) Register(ctx context.Context, req domain.RegisterRequest) 
 		); err != nil {
 			return fmt.Errorf("create mood profile: %w", err)
 		}
+		return nil
+	})
+	if err != nil {
+		if code := constraintErrorCode(err); code != "" {
+			return nil, code, err
+		}
+		return nil, domain.CodeInternalError, err
+	}
+
+	return &domain.AuthResponse{User: user.Public()}, "", nil
+}
+
+// atomic signup: creates user + saves all onboarding data in one transaction.
+// if any step fails, nothing is persisted.
+func (s *AuthService) Signup(ctx context.Context, req domain.SignupRequest) (*domain.AuthResponse, domain.ErrorCode, error) {
+	username := strings.TrimSpace(req.Username)
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	password := strings.TrimSpace(req.Password)
+
+	if username == "" || email == "" || password == "" {
+		return nil, domain.CodeInvalidRequest, fmt.Errorf("missing required fields")
+	}
+	if len(password) < 8 {
+		return nil, domain.CodeInvalidRequest, fmt.Errorf("password must be at least 8 characters")
+	}
+	if len(req.Genres) == 0 {
+		return nil, domain.CodeInvalidRequest, fmt.Errorf("at least one genre is required")
+	}
+
+	hash, err := s.hasher.Hash(password)
+	if err != nil {
+		return nil, domain.CodeInternalError, fmt.Errorf("hash: %w", err)
+	}
+
+	user := &domain.User{
+		ID:           uuid.New(),
+		Username:     username,
+		Email:        email,
+		PasswordHash: hash,
+		IsActive:     true,
+	}
+
+	// build genre weights JSONB
+	weights := make(map[string]float64, len(req.Genres))
+	for _, g := range req.Genres {
+		weights[g] = 1.0
+	}
+	weightsJSON, err := json.Marshal(weights)
+	if err != nil {
+		return nil, domain.CodeInternalError, fmt.Errorf("marshal genre weights: %w", err)
+	}
+
+	err = s.db.WithTx(ctx, func(txCtx context.Context) error {
+		// 1. create user
+		if err := s.users.CreateUser(txCtx, user); err != nil {
+			return err
+		}
+
+		// 2. create preferences with onboarding data
+		_, err := s.db.Exec(txCtx, `
+			INSERT INTO user_preferences (user_id, genre_weights, runtime_pref, decade_low, decade_high)
+			VALUES ($1, $2, $3, $4, $5)`,
+			user.ID, weightsJSON, req.RuntimePref, req.DecadeLow, req.DecadeHigh,
+		)
+		if err != nil {
+			return fmt.Errorf("create preferences: %w", err)
+		}
+
+		// 3. create mood profile with liked/disliked + default mood
+		_, err = s.db.Exec(txCtx, `
+			INSERT INTO user_mood_profile (user_id, liked, disliked, attributes)
+			VALUES ($1, $2, $3, jsonb_build_object('default_mood', $4::text))`,
+			user.ID, req.LikedIDs, req.DislikedIDs, req.DefaultMood,
+		)
+		if err != nil {
+			return fmt.Errorf("create mood profile: %w", err)
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -192,8 +271,12 @@ func (s *AuthService) IssueTokens(ctx context.Context, user *domain.UserPublic, 
 		UserID:    user.ID,
 		TokenHash: security.HashSecret(info.Secret),
 		ExpiresAt: time.Now().Add(s.refresh.Expiration()),
-		IPAddress: &meta.IP,
-		UserAgent: &meta.UserAgent,
+	}
+	if meta.IP != "" {
+		rt.IPAddress = &meta.IP
+	}
+	if meta.UserAgent != "" {
+		rt.UserAgent = &meta.UserAgent
 	}
 
 	if err := s.users.StoreRefreshToken(ctx, rt); err != nil {

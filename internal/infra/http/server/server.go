@@ -47,6 +47,7 @@ func NewServer(
 	r.Route("/api", func(api chi.Router) {
 		// public routes - no auth required
 		api.Post("/auth/register", authHandler.Register())
+		api.Post("/auth/signup", authHandler.Signup())
 		api.Post("/auth/login", authHandler.Login())
 		api.Post("/auth/refresh", authHandler.Refresh())
 		api.Post("/auth/logout", authHandler.Logout())

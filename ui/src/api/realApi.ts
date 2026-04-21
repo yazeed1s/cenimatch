@@ -9,6 +9,10 @@ let _accessToken: string | null = null;
 export function setAccessToken(token: string) { _accessToken = token; }
 export function clearAccessToken() { _accessToken = null; }
 
+export function setRefreshToken(token: string) { localStorage.setItem("cenimatch.refresh", token); }
+export function getRefreshToken() { return localStorage.getItem("cenimatch.refresh"); }
+export function clearRefreshToken() { localStorage.removeItem("cenimatch.refresh"); }
+
 interface ApiEnvelope<T> {
   success: boolean;
   data: T;
@@ -87,19 +91,37 @@ export const authApi = {
     }),
 
   // POST /api/auth/refresh  
-  refresh: (): Promise<{ access_token: string }> =>
-    fetchJSON("/api/auth/refresh", { method: "POST" }),
+  refresh: (): Promise<{ access_token: string, refresh_token: string }> =>
+    fetchJSON("/api/auth/refresh", { 
+      method: "POST", 
+      body: JSON.stringify({ refresh_token: getRefreshToken() }) 
+    }),
 
   // POST /api/auth/logout
-  logout: (): Promise<void> =>
-    fetchJSON("/api/auth/logout", { method: "POST" }),
+  logout: async (): Promise<void> => {
+    const token = getRefreshToken();
+    if (token) {
+      await fetchJSON("/api/auth/logout", { 
+        method: "POST", 
+        body: JSON.stringify({ refresh_token: token }) 
+      }).catch(() => {});
+    }
+    clearAccessToken();
+    clearRefreshToken();
+  },
 };
 
 
 export const realApi = {
-  listMovies: async (limit = 50, offset = 0): Promise<Movie[]> => {
-    const raws = await fetchJSON<RawMovie[]>(`/api/movies?limit=${limit}&offset=${offset}`);
-    return mapMovies(raws);
+  listMovies: async (limit = 50, offset = 0, query?: string, genre?: string): Promise<Movie[]> => {
+    const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
+    if (query) params.append("q", query);
+    if (genre) params.append("genre", genre);
+    
+    // Determine route based on search vs list
+    const path = query ? `/api/movies/search?${params.toString()}` : `/api/movies?${params.toString()}`;
+    const raw = await fetchJSON<RawMovie[]>(path);
+    return mapMovies(raw);
   },
 
   getRecommendations: async (_userId: string | undefined, mood: string | null): Promise<Movie[]> => {
@@ -205,27 +227,19 @@ export const realApi = {
 
 
   onboardUser: async (data: UserOnboardingData): Promise<User> => {
-    // phase 1 — register and get access token
+    const moodKey = data.mood.toLowerCase().replace(/-/g, "_").replace(/\s/g, "_");
+    
+    // atomic signup — creates user + onboarding preferences in one tx
     const authRes = await fetchJSON<{
       user: { id: string; username: string; email: string; created_at: string };
       access_token: string;
       refresh_token: string;
-    }>("/api/auth/register", {
+    }>("/api/auth/signup", {
       method: "POST",
       body: JSON.stringify({
         username: data.name.toLowerCase().replace(/\s+/g, "_"),
         email: data.email,
         password: data.password,
-      }),
-    });
-
-    if (authRes.access_token) setAccessToken(authRes.access_token);
-
-    // phase 2 — save onboarding preferences (authenticated)
-    const moodKey = data.mood.toLowerCase().replace(/-/g, "_").replace(/\s/g, "_");
-    await fetchJSON("/api/users/onboard", {
-      method: "POST",
-      body: JSON.stringify({
         genres: data.genres,
         default_mood: moodKey,
         liked_ids: data.likedMovieIds,
@@ -235,6 +249,9 @@ export const realApi = {
         decade_high: data.decadeHigh ?? null,
       }),
     });
+
+    if (authRes.access_token) setAccessToken(authRes.access_token);
+    if (authRes.refresh_token) setRefreshToken(authRes.refresh_token);
 
     return {
       id: authRes.user?.id,

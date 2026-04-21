@@ -38,15 +38,9 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
   // step 1 — genres
   const [genres, setGenres] = useState<string[]>([]);
 
-  // step 2 — film anchors (now stores full Movie objects for display)
+  // step 2 — film anchors
   const [likedMovies, setLikedMovies] = useState<Movie[]>([]);
   const [dislikedMovies, setDislikedMovies] = useState<Movie[]>([]);
-  const [likedQuery, setLikedQuery] = useState("");
-  const [dislikedQuery, setDislikedQuery] = useState("");
-  const [likedOptions, setLikedOptions] = useState<Movie[]>([]);
-  const [dislikedOptions, setDislikedOptions] = useState<Movie[]>([]);
-  const [loadingLiked, setLoadingLiked] = useState(false);
-  const [loadingDisliked, setLoadingDisliked] = useState(false);
 
   // step 3 — preferences
   const [runtimePref, setRuntimePref] = useState(0);
@@ -75,51 +69,67 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
     return true;
   }
 
-  // debounced search for liked movies
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!likedQuery.trim()) { setLikedOptions([]); return; }
-      setLoadingLiked(true);
-      const selectedIds = new Set(likedMovies.map((m) => m.id));
-      realApi.searchMovies(likedQuery)
-        .then((movies) => setLikedOptions(movies.filter((m) => !selectedIds.has(m.id)).slice(0, 8)))
-        .finally(() => setLoadingLiked(false));
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [likedQuery, likedMovies]);
+  // --- step 2 filtering & pagination ---
+  const [popularMovies, setPopularMovies] = useState<Movie[]>([]);
+  const [loadingPopular, setLoadingPopular] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [pickerGenre, setPickerGenre] = useState("");
+  const [pickerOffset, setPickerOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
 
-  // debounced search for disliked movies
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!dislikedQuery.trim()) { setDislikedOptions([]); return; }
-      setLoadingDisliked(true);
-      const selectedIds = new Set(dislikedMovies.map((m) => m.id));
-      realApi.searchMovies(dislikedQuery)
-        .then((movies) => setDislikedOptions(movies.filter((m) => !selectedIds.has(m.id)).slice(0, 8)))
-        .finally(() => setLoadingDisliked(false));
-    }, 250);
+    const timer = setTimeout(() => setDebouncedQuery(pickerQuery), 300);
     return () => clearTimeout(timer);
-  }, [dislikedQuery, dislikedMovies]);
+  }, [pickerQuery]);
 
-  function addMovie(target: "liked" | "disliked", movie: Movie) {
-    if (target === "liked") {
-      if (likedMovies.some((m) => m.id === movie.id) || likedMovies.length >= 3) return;
-      setLikedMovies((prev) => [...prev, movie]);
-      setLikedQuery("");
-      setLikedOptions([]);
-    } else {
-      if (dislikedMovies.some((m) => m.id === movie.id) || dislikedMovies.length >= 3) return;
-      setDislikedMovies((prev) => [...prev, movie]);
-      setDislikedQuery("");
-      setDislikedOptions([]);
+  async function loadMovies(reset: boolean) {
+    if (step !== 2) return;
+    setLoadingPopular(true);
+    const targetOffset = reset ? 0 : pickerOffset;
+
+    try {
+      const movies = await realApi.listMovies(24, targetOffset, debouncedQuery, pickerGenre);
+      setHasMore(movies.length === 24);
+      if (reset) {
+        setPopularMovies(movies);
+        setPickerOffset(movies.length);
+      } else {
+        setPopularMovies((prev) => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const additions = movies.filter(m => !existingIds.has(m.id));
+          return [...prev, ...additions];
+        });
+        setPickerOffset(targetOffset + movies.length);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingPopular(false);
     }
   }
 
-  function removeMovie(target: "liked" | "disliked", id: number) {
-    if (target === "liked") {
-      setLikedMovies((prev) => prev.filter((m) => m.id !== id));
+  useEffect(() => {
+    if (step === 2) {
+      loadMovies(true);
+    }
+  }, [step, debouncedQuery, pickerGenre]);
+
+  function setMovieOpinion(movie: Movie, opinion: "like" | "dislike") {
+    if (opinion === "like") {
+      setDislikedMovies(prev => prev.filter(m => m.id !== movie.id));
+      setLikedMovies(prev => {
+        if (prev.some(m => m.id === movie.id)) return prev.filter(m => m.id !== movie.id);
+        if (prev.length >= 10) return prev;
+        return [...prev, movie];
+      });
     } else {
-      setDislikedMovies((prev) => prev.filter((m) => m.id !== id));
+      setLikedMovies(prev => prev.filter(m => m.id !== movie.id));
+      setDislikedMovies(prev => {
+        if (prev.some(m => m.id === movie.id)) return prev.filter(m => m.id !== movie.id);
+        if (prev.length >= 10) return prev;
+        return [...prev, movie];
+      });
     }
   }
 
@@ -127,7 +137,6 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
     setSubmitting(true);
     setSubmitError("");
     try {
-      // compute decade range from selected decades
       let decadeLow: number | undefined;
       let decadeHigh: number | undefined;
       if (selectedDecades.length > 0) {
@@ -159,7 +168,7 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
 
   return (
     <div className="onboard-wrap">
-      <div className="onboard-card fade-in">
+      <div className={`onboard-card fade-in ${step === 2 ? "wide" : ""}`}>
         <div className="progress-dots">
           {Array.from({ length: TOTAL_STEPS }, (_, i) => (
             <div key={i} className={`dot ${i <= step ? "active" : ""}`} />
@@ -222,99 +231,72 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
         {/* ── step 2 — film anchors with poster picker ── */}
         {step === 2 && (
           <>
-            <div className="onboard-title">Pick films you have opinions about</div>
+            <div className="onboard-title">Pick films you love (or hate)</div>
             <div className="onboard-subtitle">
-              Search our catalog and select movies you loved or didn't enjoy.
+              Select movies to jumpstart your recommendations. Hover over a poster to like (👍) or dislike (👎).
             </div>
 
-            {/* liked movies */}
-            <div style={{ marginBottom: 24 }}>
-              <div className="form-label" style={{ marginBottom: 12, color: "var(--accent)" }}>✦ Movies you loved (up to 3)</div>
-              <div className="form-group">
-                <input
-                  className="form-input"
-                  value={likedQuery}
-                  placeholder={likedMovies.length >= 3 ? "max 3 selected" : "search by movie title…"}
-                  onChange={(e) => setLikedQuery(e.target.value)}
-                  disabled={likedMovies.length >= 3}
-                />
-              </div>
-              {loadingLiked && likedQuery && <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>searching…</div>}
-              {likedOptions.length > 0 && (
-                <div className="picker-grid" style={{ marginBottom: 12 }}>
-                  {likedOptions.map((movie) => (
-                    <button key={`liked-opt-${movie.id}`} className="picker-card" onClick={() => addMovie("liked", movie)}>
-                      {movie.poster ? (
-                        <img src={movie.poster} alt={movie.title} className="picker-poster" />
-                      ) : (
-                        <div className="picker-poster-placeholder">🎬</div>
-                      )}
-                      <div className="picker-info">
-                        <div className="picker-title">{movie.title}</div>
-                        <div className="picker-year">{movie.year || "—"}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="picked-row">
-                {likedMovies.map((movie) => (
-                  <div key={`liked-${movie.id}`} className="picked-chip" onClick={() => removeMovie("liked", movie.id)}>
-                    {movie.poster ? (
-                      <img src={movie.poster} alt={movie.title} className="picked-poster" />
-                    ) : (
-                      <div className="picked-poster-placeholder">🎬</div>
-                    )}
-                    <span className="picked-title">{movie.title}</span>
-                    <span className="picked-remove">×</span>
-                  </div>
+            <div className="picker-toolbar">
+              <input 
+                className="picker-toolbar-input" 
+                placeholder="Search movies by title..." 
+                value={pickerQuery}
+                onChange={(e) => setPickerQuery(e.target.value)}
+              />
+              <div className="picker-genres">
+                <button 
+                  className={`picker-genre ${pickerGenre === "" ? "active" : ""}`}
+                  onClick={() => setPickerGenre("")}
+                >All</button>
+                {GENRES.map(g => (
+                  <button 
+                    key={`filt-${g}`}
+                    className={`picker-genre ${pickerGenre === g ? "active" : ""}`}
+                    onClick={() => setPickerGenre(g)}
+                  >{g}</button>
                 ))}
               </div>
             </div>
 
-            {/* disliked movies */}
-            <div style={{ marginBottom: 24 }}>
-              <div className="form-label" style={{ marginBottom: 12, color: "var(--red)" }}>✦ Movies you didn't enjoy (up to 3)</div>
-              <div className="form-group">
-                <input
-                  className="form-input"
-                  value={dislikedQuery}
-                  placeholder={dislikedMovies.length >= 3 ? "max 3 selected" : "search by movie title…"}
-                  onChange={(e) => setDislikedQuery(e.target.value)}
-                  disabled={dislikedMovies.length >= 3}
-                />
-              </div>
-              {loadingDisliked && dislikedQuery && <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>searching…</div>}
-              {dislikedOptions.length > 0 && (
-                <div className="picker-grid" style={{ marginBottom: 12 }}>
-                  {dislikedOptions.map((movie) => (
-                    <button key={`disliked-opt-${movie.id}`} className="picker-card" onClick={() => addMovie("disliked", movie)}>
-                      {movie.poster ? (
-                        <img src={movie.poster} alt={movie.title} className="picker-poster" />
-                      ) : (
-                        <div className="picker-poster-placeholder">🎬</div>
-                      )}
-                      <div className="picker-info">
-                        <div className="picker-title">{movie.title}</div>
-                        <div className="picker-year">{movie.year || "—"}</div>
-                      </div>
-                    </button>
-                  ))}
+            <div className="picker-grid" style={{ marginBottom: 24, maxHeight: "560px", overflowY: "auto", padding: "4px" }}>
+              {popularMovies.map((movie) => {
+                const isLiked = likedMovies.some((m) => m.id === movie.id);
+                const isDisliked = dislikedMovies.some((m) => m.id === movie.id);
+                
+                let cardClass = "";
+                if (isLiked) cardClass = "liked";
+                else if (isDisliked) cardClass = "disliked";
+
+                return (
+                  <div key={`pop-${movie.id}`} className={`picker-card ${cardClass}`}>
+                    <div className="picker-actions">
+                      <button className="picker-btn btn-like" onClick={() => setMovieOpinion(movie, "like")}>👍</button>
+                      <button className="picker-btn btn-dislike" onClick={() => setMovieOpinion(movie, "dislike")}>👎</button>
+                    </div>
+                    {movie.poster ? (
+                      <img src={movie.poster} alt={movie.title} className="picker-poster" />
+                    ) : (
+                      <div className="picker-poster-placeholder">🎬</div>
+                    )}
+                    <div className="picker-info">
+                      <div className="picker-title">{movie.title}</div>
+                      <div className="picker-year">{movie.year || "—"}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              
+              {loadingPopular && (
+                <div style={{ padding: "40px", textAlign: "center", color: "var(--text3)", gridColumn: "1 / -1" }}>
+                  Loading movies...
                 </div>
               )}
-              <div className="picked-row">
-                {dislikedMovies.map((movie) => (
-                  <div key={`disliked-${movie.id}`} className="picked-chip picked-chip-disliked" onClick={() => removeMovie("disliked", movie.id)}>
-                    {movie.poster ? (
-                      <img src={movie.poster} alt={movie.title} className="picked-poster" />
-                    ) : (
-                      <div className="picked-poster-placeholder">🎬</div>
-                    )}
-                    <span className="picked-title">{movie.title}</span>
-                    <span className="picked-remove">×</span>
-                  </div>
-                ))}
-              </div>
+              
+              {hasMore && !loadingPopular && popularMovies.length > 0 && (
+                <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "center", padding: "20px 0" }}>
+                  <button className="btn btn-ghost" onClick={() => loadMovies(false)}>Load More</button>
+                </div>
+              )}
             </div>
 
             <div style={{ display: "flex", gap: 10 }}>
