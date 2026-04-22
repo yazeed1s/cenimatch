@@ -23,8 +23,7 @@ func NewApp() (*App, error) {
 		os.Exit(1)
 	}
 
-	// jwt nil for now, plug in when ready
-	c, err := container.New(cfg, nil)
+	c, err := container.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("init: %w", err)
 	}

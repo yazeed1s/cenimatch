@@ -5,7 +5,8 @@ import (
 	"cenimatch/internal/infra/database"
 	"cenimatch/internal/infra/http/server"
 	"cenimatch/internal/infra/repository"
-	"cenimatch/internal/ports"
+	"cenimatch/internal/infra/security"
+	"cenimatch/internal/service"
 	"fmt"
 	"strconv"
 	"time"
@@ -17,7 +18,7 @@ type Container struct {
 	Server *server.Server
 }
 
-func New(cfg *config.Config, jwt ports.JWTGenerator) (*Container, error) {
+func New(cfg *config.Config) (*Container, error) {
 	pool, err := database.NewConnection(cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("db: %w", err)
@@ -30,8 +31,20 @@ func New(cfg *config.Config, jwt ports.JWTGenerator) (*Container, error) {
 		return nil, fmt.Errorf("invalid port %q: %w", cfg.Port, err)
 	}
 
+	// security implementations
+	hasher := security.NewBcryptHasher(cfg.BcryptCost)
+	jwt := security.NewJWTGen(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTExpiration)
+	refreshGen := security.NewRefreshGen(cfg.RefreshTokenExpiration)
+
+	// repositories
 	movieRepo := repository.NewMovieRepo(db)
-	srv := server.NewServer(p, jwt, movieRepo)
+	userRepo := repository.NewUserRepo(db)
+
+	// services
+	authService := service.NewAuthService(userRepo, db, hasher, jwt, refreshGen)
+	onboardingService := service.NewOnboardingService(db)
+
+	srv := server.NewServer(p, jwt, authService, onboardingService, movieRepo)
 
 	return &Container{
 		Cfg:    cfg,

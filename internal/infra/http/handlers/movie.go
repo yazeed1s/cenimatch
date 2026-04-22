@@ -24,8 +24,9 @@ func (h *MovieHandler) ListMovies() http.HandlerFunc {
 		limit := intQuery(r, "limit", 30, 200)
 		offset := intQuery(r, "offset", 0, 1000000)
 		query := r.URL.Query().Get("q")
+		genre := r.URL.Query().Get("genre")
 
-		movies, err := h.repo.ListMovies(r.Context(), query, limit, offset)
+		movies, err := h.repo.ListMovies(r.Context(), query, genre, limit, offset)
 		if err != nil {
 			utils.InternalServerError(w, err.Error())
 			return
@@ -40,8 +41,9 @@ func (h *MovieHandler) SearchMovies() http.HandlerFunc {
 		limit := intQuery(r, "limit", 30, 200)
 		offset := intQuery(r, "offset", 0, 1000000)
 		query := r.URL.Query().Get("q")
+		genre := r.URL.Query().Get("genre")
 
-		movies, err := h.repo.ListMovies(r.Context(), query, limit, offset)
+		movies, err := h.repo.ListMovies(r.Context(), query, genre, limit, offset)
 		if err != nil {
 			utils.InternalServerError(w, err.Error())
 			return

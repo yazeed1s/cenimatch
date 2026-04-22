@@ -179,7 +179,12 @@ export const mockApi = {
 
   onboardUser: async (data: UserOnboardingData): Promise<User> => {
     await delay(300);
-    return { ...MOCK_USER, name: data.name, email: data.email, preferences: { genres: data.genres, mood: data.mood } };
+    return {
+      ...MOCK_USER,
+      name: data.name,
+      email: data.email,
+      preferences: { genres: data.genres, mood: data.mood },
+    };
   },
 
 

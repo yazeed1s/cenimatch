@@ -4,6 +4,7 @@ import (
 	"cenimatch/internal/domain"
 	"cenimatch/internal/ports"
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -20,6 +21,7 @@ func NewMovieRepo(db ports.DBManager) *MovieRepo {
 func (m *MovieRepo) ListMovies(
 	ctx context.Context,
 	query string,
+	genre string,
 	limit int,
 	offset int,
 ) ([]domain.RawMovie, error) {
@@ -86,8 +88,18 @@ func (m *MovieRepo) ListMovies(
 		JOIN base_movies b ON b.tmdb_id = m.tmdb_id`
 
 	var sql string
+	var args []interface{}
+	argCount := 1
+
+	genreFilter := ""
+	if genre != "" {
+		genreFilter = fmt.Sprintf(` AND EXISTS (SELECT 1 FROM movie_genres mg JOIN genres g ON g.id = mg.genre_id WHERE mg.movie_id = m.tmdb_id AND lower(g.name) = $%d)`, argCount)
+		args = append(args, strings.ToLower(genre))
+		argCount++
+	}
+
 	if query == "" {
-		sql = `
+		sql = fmt.Sprintf(`
 		WITH base_movies AS (
 			SELECT m.tmdb_id
 			FROM movies m
@@ -95,29 +107,29 @@ func (m *MovieRepo) ListMovies(
 				m.poster_path IS NOT NULL AND
 				lower(m.poster_path) <> 'none' AND
 				coalesce(m.vote_count, 0) >= 20
+				%s
 			ORDER BY m.tmdb_id DESC
-			LIMIT $1 OFFSET $2
-		)
-		` + baseSelect + `
-		ORDER BY m.tmdb_id DESC`
+			LIMIT $%d OFFSET $%d
+		)`, genreFilter, argCount, argCount+1)
+		args = append(args, limit, offset)
 	} else {
-		sql = `
+		sql = fmt.Sprintf(`
 		WITH base_movies AS (
 			SELECT m.tmdb_id
 			FROM movies m
 			WHERE
-				lower(m.title) LIKE '%' || $1 || '%' OR
-				lower(m.original_title) LIKE '%' || $1 || '%'
+				(lower(m.title) LIKE '%%' || $%d || '%%' OR
+				lower(m.original_title) LIKE '%%' || $%d || '%%')
+				%s
 			ORDER BY coalesce(m.popularity, 0) DESC, coalesce(m.vote_count, 0) DESC
-			LIMIT $2 OFFSET $3
-		)
-		` + baseSelect + `
-		ORDER BY coalesce(m.popularity, 0) DESC, coalesce(m.vote_count, 0) DESC`
+			LIMIT $%d OFFSET $%d
+		)`, argCount, argCount, genreFilter, argCount+1, argCount+2)
+		args = append(args, query, limit, offset)
 	}
-	args := []interface{}{limit, offset}
-	if query != "" {
-		args = []interface{}{query, limit, offset}
-	}
+
+	sql = sql + baseSelect + `
+	ORDER BY coalesce(m.popularity, 0) DESC, coalesce(m.vote_count, 0) DESC`
+
 	rows, err := m.db.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
