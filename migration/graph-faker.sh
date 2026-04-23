@@ -24,7 +24,7 @@ done
 
 SQL_BODY=$(cat <<SQL
 BEGIN;
-${TRUNCATE:+TRUNCATE watch_history, user_feedback, users CASCADE;}
+$(if [ "$TRUNCATE" = true ]; then echo "TRUNCATE watch_history, user_feedback, users CASCADE;"; fi)
 
 WITH clusters AS (
   VALUES
@@ -88,6 +88,7 @@ rated AS (
     SET rating = EXCLUDED.rating,
         not_interested = EXCLUDED.not_interested,
         created_at = EXCLUDED.created_at
+  RETURNING id
 )
 SELECT
   (SELECT count(*) FROM new_users) AS users_created,
