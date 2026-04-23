@@ -443,33 +443,19 @@ BEGIN
 END
 \$\$;
 
-SELECT *
-FROM ag_catalog.cypher(
-  '${GRAPH_NAME}'::name,
-  \$cypher\$ CREATE INDEX ON :User(user_id) \$cypher\$,
-  NULL::agtype
-) AS (v agtype);
+-- AGE 1.6.0 does not support CREATE INDEX via cypher().
+-- Create property indexes directly on graph label tables.
+CREATE INDEX IF NOT EXISTS idx_movie_graph_user_user_id_gin
+  ON movie_graph."User" USING gin ((properties->('user_id'::text)));
 
-SELECT *
-FROM ag_catalog.cypher(
-  '${GRAPH_NAME}'::name,
-  \$cypher\$ CREATE INDEX ON :Movie(movie_id) \$cypher\$,
-  NULL::agtype
-) AS (v agtype);
+CREATE INDEX IF NOT EXISTS idx_movie_graph_movie_movie_id_gin
+  ON movie_graph."Movie" USING gin ((properties->('movie_id'::text)));
 
-SELECT *
-FROM ag_catalog.cypher(
-  '${GRAPH_NAME}'::name,
-  \$cypher\$ CREATE INDEX ON :Genre(genre_id) \$cypher\$,
-  NULL::agtype
-) AS (v agtype);
+CREATE INDEX IF NOT EXISTS idx_movie_graph_genre_genre_id_gin
+  ON movie_graph."Genre" USING gin ((properties->('genre_id'::text)));
 
-SELECT *
-FROM ag_catalog.cypher(
-  '${GRAPH_NAME}'::name,
-  \$cypher\$ CREATE INDEX ON :Person(person_id) \$cypher\$,
-  NULL::agtype
-) AS (v agtype);
+CREATE INDEX IF NOT EXISTS idx_movie_graph_person_person_id_gin
+  ON movie_graph."Person" USING gin ((properties->('person_id'::text)));
 
 COMMIT;
 SQL
