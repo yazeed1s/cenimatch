@@ -75,17 +75,6 @@ CREATE TEMP TABLE staging_names (
 \copy staging_principals_raw FROM '/data/raw/imdb-title-principals/title.principals.tsv' WITH (FORMAT text, DELIMITER E'\x01');
 \copy staging_names FROM '/data/raw/imdb-name-basics/name.basics.tsv' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N', HEADER true, QUOTE E'\b');
 
-INSERT INTO staging_principals (tconst, ordering, nconst, category, job, characters)
-SELECT
-  split_part(line, E'\t', 1),
-  split_part(line, E'\t', 2),
-  split_part(line, E'\t', 3),
-  split_part(line, E'\t', 4),
-  NULLIF(split_part(line, E'\t', 5), '\N'),
-  NULLIF(split_part(line, E'\t', 6), '\N')
-FROM staging_principals_raw
-WHERE split_part(line, E'\t', 1) <> 'tconst';
-
 -- Movies
 INSERT INTO movies (
   tmdb_id,
@@ -140,24 +129,44 @@ FROM (
 ) s
 WHERE
   rating IS NOT NULL
+  AND rating > 7.7
+  AND NULLIF(s.original_language, '') = 'en'
+  AND NULLIF(s.runtime, '')::INT > 60
+  AND s.rd >= DATE '1990-01-01'
   AND lower(coalesce(s.adult, 'false')) NOT IN ('true', '1', 't')
   AND lower(coalesce(s.title, '')) !~ '(porn|xxx|hentai|erotic|adult|nsfw|milf|incest|blowjob|hardcore)'
   AND lower(coalesce(s.overview, '')) !~ '(porn|xxx|hentai|erotic|adult|nsfw|milf|incest|blowjob|hardcore)'
 ON CONFLICT (tmdb_id) DO NOTHING;
 
--- At this point, only movies with a valid IMDb rating were inserted.
+-- Parse principals only for movies we kept.
+INSERT INTO staging_principals (tconst, ordering, nconst, category, job, characters)
+SELECT
+  split_part(spr.line, E'\t', 1),
+  split_part(spr.line, E'\t', 2),
+  split_part(spr.line, E'\t', 3),
+  split_part(spr.line, E'\t', 4),
+  NULLIF(split_part(spr.line, E'\t', 5), '\N'),
+  NULLIF(split_part(spr.line, E'\t', 6), '\N')
+FROM staging_principals_raw spr
+JOIN movies m ON m.imdb_id = split_part(spr.line, E'\t', 1)
+WHERE split_part(spr.line, E'\t', 1) <> 'tconst';
 
--- Persons (only those referenced by crew)
+-- Persons referenced by kept movies only.
 WITH needed AS (
   SELECT DISTINCT person_id
   FROM (
-    SELECT unnest(string_to_array(NULLIF(directors, '\N'), ',')) AS person_id FROM staging_crew
+    SELECT unnest(string_to_array(NULLIF(c.directors, '\N'), ',')) AS person_id
+    FROM staging_crew c
+    JOIN movies m ON m.imdb_id = c.tconst
     UNION
-    SELECT unnest(string_to_array(NULLIF(writers, '\N'), ',')) AS person_id FROM staging_crew
+    SELECT unnest(string_to_array(NULLIF(c.writers, '\N'), ',')) AS person_id
+    FROM staging_crew c
+    JOIN movies m ON m.imdb_id = c.tconst
     UNION
     SELECT nconst AS person_id
-    FROM staging_principals
-    WHERE category IN ('actor', 'actress', 'self', 'director', 'writer', 'producer')
+    FROM staging_principals sp
+    JOIN movies m ON m.imdb_id = sp.tconst
+    WHERE sp.category IN ('actor', 'actress', 'self', 'director', 'writer', 'producer')
   ) u
   WHERE person_id IS NOT NULL AND person_id <> ''
 )

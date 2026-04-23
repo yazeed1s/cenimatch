@@ -104,6 +104,40 @@ to load the TMDB/IMDb seed data (expects files in `data/raw/` mounted into the d
 
 starts the api on whatever port is in your `.env`. hit `localhost:8080/health` to check.
 
+## Common DB workflows
+
+### Setup DB, Build Schema, and Seed Data
+
+```bash
+# note it will remove current DB and create a new one
+docker compose down -v && docker compose up -d && sleep 3 && bash migration/pre-create.sh && ./run.sh migrate create && time ./run.sh migrate seed
+```
+
+### Backup DB
+
+```bash
+docker exec -i -u root cenimatch-db pg_dump -U u -d cenimatch-db > backup.sql
+```
+
+### Restore DB
+
+```bash
+# note it will remove current DB and create a new one
+docker compose down -v && docker compose up -d && sleep 3 && docker exec -i -u root cenimatch-db psql -U u -d cenimatch-db < backup.sql
+```
+
+### Build graph and run faker
+
+```bash
+BATCH_SIZE=5000 bash migration/build-graph.sh
+```
+
+### Run faker
+
+```bash
+bash migration/graph-faker.sh --execute
+```
+
 ## commands
 
 | command                  | what it does                                        |
