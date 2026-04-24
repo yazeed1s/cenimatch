@@ -129,10 +129,11 @@ FROM (
 ) s
 WHERE
   rating IS NOT NULL
-  AND rating > 7.7
+  AND rating >= 6
+  AND NULLIF(s.vote_count, '')::INT >= 50
   AND NULLIF(s.original_language, '') = 'en'
-  AND NULLIF(s.runtime, '')::INT > 60
-  AND s.rd >= DATE '1990-01-01'
+  AND NULLIF(s.runtime, '')::INT >= 80
+  AND s.rd >= DATE '1980-01-01'
   AND lower(coalesce(s.adult, 'false')) NOT IN ('true', '1', 't')
   AND lower(coalesce(s.title, '')) !~ '(porn|xxx|hentai|erotic|adult|nsfw|milf|incest|blowjob|hardcore)'
   AND lower(coalesce(s.overview, '')) !~ '(porn|xxx|hentai|erotic|adult|nsfw|milf|incest|blowjob|hardcore)'

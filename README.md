@@ -127,6 +127,16 @@ docker exec -i -u root cenimatch-db pg_dump -U u -d cenimatch-db > backup.sql
 docker compose down -v && docker compose up -d && sleep 3 && docker exec -i -u root cenimatch-db psql -U u -d cenimatch-db < backup.sql
 ```
 
+### Repair Apache AGE graph OID drift (after restore)
+
+If graph queries fail with an error like `graph with oid ... does not exist`, run:
+
+```bash
+bash migration/repair-age-oid.sh
+```
+
+Then restart the API process so pooled DB connections are refreshed.
+
 ### Build graph and run faker
 
 ```bash
