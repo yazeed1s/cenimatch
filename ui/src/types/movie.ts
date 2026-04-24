@@ -21,6 +21,12 @@ export interface Movie {
   explanation?: string; 
 }
 
+export interface GraphRelatedMovies {
+  same_director: Movie[];
+  same_actors: Movie[];
+  similar_theme: Movie[];
+}
+
 export interface User {
   id?: string;         
   name: string;        
@@ -81,3 +87,27 @@ export const GENRES = [
   "Drama", "Fantasy", "Horror", "History", "Mystery",
   "Romance", "Science Fiction", "Sport", "Thriller", "Western",
 ];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHAT / LLM-to-SQL types
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  // client-side only: enriched result fields (not sent to backend)
+  resultType?: "movies" | "text" | "error";
+  movies?: Movie[];
+  rows?: Record<string, unknown>[];
+  columns?: string[];
+  sql?: string;
+}
+
+export interface ChatResponse {
+  type: "movies" | "text";
+  movies?: Movie[];          // present when type === "movies"
+  rows?: Record<string, unknown>[];   // present when type === "text"
+  columns?: string[];
+  sql: string;
+  message: string;
+}
