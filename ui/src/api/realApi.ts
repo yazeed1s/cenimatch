@@ -1,13 +1,19 @@
-import type { Movie, User, AnalyticsData, UserOnboardingData } from "../types/movie";
+import type { Movie, User, AnalyticsData, UserOnboardingData, GraphRelatedMovies } from "../types/movie";
 import { mapMovies, mapMovie } from "./mappers";
 import type { RawMovie, RawActivityEvent } from "./mappers";
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080";
 
-let _accessToken: string | null = null;
+let _accessToken: string | null = localStorage.getItem("cenimatch.access");
 
-export function setAccessToken(token: string) { _accessToken = token; }
-export function clearAccessToken() { _accessToken = null; }
+export function setAccessToken(token: string) {
+  _accessToken = token;
+  localStorage.setItem("cenimatch.access", token);
+}
+export function clearAccessToken() {
+  _accessToken = null;
+  localStorage.removeItem("cenimatch.access");
+}
 
 export function setRefreshToken(token: string) { localStorage.setItem("cenimatch.refresh", token); }
 export function getRefreshToken() { return localStorage.getItem("cenimatch.refresh"); }
@@ -92,19 +98,19 @@ export const authApi = {
 
   // POST /api/auth/refresh  
   refresh: (): Promise<{ access_token: string, refresh_token: string }> =>
-    fetchJSON("/api/auth/refresh", { 
-      method: "POST", 
-      body: JSON.stringify({ refresh_token: getRefreshToken() }) 
+    fetchJSON("/api/auth/refresh", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: getRefreshToken() })
     }),
 
   // POST /api/auth/logout
   logout: async (): Promise<void> => {
     const token = getRefreshToken();
     if (token) {
-      await fetchJSON("/api/auth/logout", { 
-        method: "POST", 
-        body: JSON.stringify({ refresh_token: token }) 
-      }).catch(() => {});
+      await fetchJSON("/api/auth/logout", {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: token })
+      }).catch(() => { });
     }
     clearAccessToken();
     clearRefreshToken();
@@ -117,7 +123,7 @@ export const realApi = {
     const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
     if (query) params.append("q", query);
     if (genre) params.append("genre", genre);
-    
+
     // Determine route based on search vs list
     const path = query ? `/api/movies/search?${params.toString()}` : `/api/movies?${params.toString()}`;
     const raw = await fetchJSON<RawMovie[]>(path);
@@ -143,6 +149,15 @@ export const realApi = {
       : `/api/movies?limit=${limit}&offset=${offset}`;
     const raws = await fetchJSON<RawMovie[]>(path);
     return mapMovies(raws);
+  },
+
+  getGraphUserRecommendations: async (): Promise<Movie[]> => {
+    try {
+      const raws = await fetchJSON<RawMovie[]>("/api/recommendations/graph");
+      return mapMovies(raws);
+    } catch {
+      return [];
+    }
   },
 
 
@@ -173,6 +188,24 @@ export const realApi = {
     }
   },
 
+  getGraphRelatedMovies: async (movieId: number): Promise<GraphRelatedMovies | null> => {
+    try {
+      const raw = await fetchJSON<{
+        same_director: RawMovie[];
+        same_actors: RawMovie[];
+        similar_theme: RawMovie[];
+      }>(`/api/movies/${movieId}/graph-related`);
+
+      return {
+        same_director: mapMovies(raw.same_director || []),
+        same_actors: mapMovies(raw.same_actors || []),
+        similar_theme: mapMovies(raw.similar_theme || []),
+      };
+    } catch {
+      return null;
+    }
+  },
+
   getMovieCrew: (movieId: number): Promise<{ members: MovieCrewMember[] }> =>
     fetchJSON(`/api/movies/${movieId}/crew`),
 
@@ -200,7 +233,7 @@ export const realApi = {
     };
   },
 
- 
+
   submitFeedback: async (movieId: number, rating: number): Promise<{ success: boolean }> => {
     try {
       await fetchJSON("/api/feedback", {
@@ -228,7 +261,7 @@ export const realApi = {
 
   onboardUser: async (data: UserOnboardingData): Promise<User> => {
     const moodKey = data.mood.toLowerCase().replace(/-/g, "_").replace(/\s/g, "_");
-    
+
     // atomic signup — creates user + onboarding preferences in one tx
     const authRes = await fetchJSON<{
       user: { id: string; username: string; email: string; created_at: string };
@@ -278,5 +311,15 @@ export const realApi = {
     fetchJSON("/api/analytics/nl", {
       method: "POST",
       body: JSON.stringify({ query }),
+    }),
+
+  // POST /api/chat  body: { messages: [{role, content}] }
+  // sends the full conversation history each turn so the llm has context.
+  chatQuery: async (
+    messages: { role: string; content: string }[]
+  ): Promise<{ type: "movies" | "text"; movies?: RawMovie[]; rows?: Record<string, unknown>[]; columns?: string[]; sql: string; message: string }> =>
+    fetchJSON("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages }),
     }),
 };

@@ -3,6 +3,7 @@ import HomePage from "../pages/HomePage";
 import SearchPage from "../pages/SearchPage";
 import MoviePage from "../pages/MoviePage";
 import DashboardPage from "../pages/DashboardPage";
+import ChatPage from "../pages/ChatPage";
 import OnboardingPage from "../pages/OnboardingPage";
 import Navbar from "../components/Navbar";
 import type { User } from "../types/movie";
@@ -45,6 +46,7 @@ export default function AppRouter({ user, onUserChange }: AppRouterProps) {
           <Route path="/search"     element={<SearchPage />} />
           <Route path="/movie/:id"  element={<MoviePage />} />
           <Route path="/dashboard"  element={<DashboardPage />} />
+          <Route path="/chat"       element={<ChatPage />} />
           <Route
             path="/signup"
             element={user ? <Navigate to="/" replace /> : <SignupRoute onComplete={onUserChange} />}
