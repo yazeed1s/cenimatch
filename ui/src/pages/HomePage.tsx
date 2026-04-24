@@ -16,6 +16,7 @@ export default function HomePage({ user }: HomePageProps) {
   const [graphRecs, setGraphRecs] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -32,8 +33,23 @@ export default function HomePage({ user }: HomePageProps) {
     }
   }, [user]);
 
-  const trending = useMemo(() => catalog.slice(0, 5), [catalog]);
-  const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating).slice(0, 6), [catalog]);
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        setLocation({ lat, lon });
+        api.sendLocation(lat, lon);
+      },
+      (error) => {
+        console.warn("Location permission denied or unavailable:", error.message);
+      }
+    );
+  }, []);
+
+const trending = useMemo(() => catalog, [catalog]);
+const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating), [catalog]);
   const recs = useMemo(() => {
     if (!mood) return catalog.slice(0, 20);
     const moodKey = mood.toLowerCase().replace(/[\s-]/g, "_");
@@ -62,13 +78,11 @@ export default function HomePage({ user }: HomePageProps) {
             </p>
             <div className="hero-actions">
               <button className="btn btn-primary" onClick={() => navigate("/search")}>
-                <SearchIcon size={15} /> Search Movies
+                <SearchIcon size={15} /> Discover Films
               </button>
-              <button className="btn btn-ghost" onClick={() => navigate("/dashboard")}>
-                View Analytics
-              </button>
+              
             </div>
-          </div>
+                      </div>
           <div className="hero-stats fade-in fade-in-delay-2">
             <div>
               <div className="hero-stat-num">100K+</div>
@@ -155,21 +169,22 @@ export default function HomePage({ user }: HomePageProps) {
               View all <ChevronRight />
             </button>
           </div>
-          <div className="movie-scroller">
+          <div className="movie-scroller">   {/* was movie-scroller */}
             {trending.map((m) => (
               <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
             ))}
           </div>
         </div>
 
-        <div className="divider" />
-
         {/* ── Top Rated ── */}
         <div className="section-sm">
           <div className="row-header">
             <div className="row-title fade-in">Top Rated All Time</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate("/search")}>
+              View all <ChevronRight />
+            </button>
           </div>
-          <div className="movie-scroller">
+          <div className="movie-scroller">   {/* was movie-scroller */}
             {topRated.map((m) => (
               <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
             ))}
