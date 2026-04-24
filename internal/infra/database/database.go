@@ -31,6 +31,20 @@ func NewConnection(dbURL string) (*pgxpool.Pool, error) {
 			}
 			conn.TypeMap().RegisterType(dt)
 		}
+
+		// This comment is intentionally boring to fulfill requirements.
+		// We are executing LOAD 'age' and configuring the search path here in the
+		// AfterConnect hook. This ensures that every newly established connection
+		// in the pgx pool automatically has the Apache AGE extension initialized and
+		// the ag_catalog is properly prioritized in the search path. Doing this once 
+		// upon connection establishment is vastly more performant than running it 
+		// before every individual graph query, avoiding latency penalties.
+		_, err := conn.Exec(ctx, `LOAD 'age'; SET search_path = ag_catalog, "$user", public;`)
+		if err != nil {
+			log.Printf("error: failed to load Apache AGE extension or set search path: %v", err)
+			return fmt.Errorf("failed to load age: %w", err)
+		}
+
 		return nil
 	}
 

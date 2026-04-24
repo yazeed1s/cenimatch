@@ -27,6 +27,7 @@ func NewServer(
 	authService *service.AuthService,
 	onboardingService *service.OnboardingService,
 	movieRepo ports.MovieRepository,
+	chatService *service.ChatService,
 ) *Server {
 
 	r := chi.NewRouter()
@@ -43,9 +44,9 @@ func NewServer(
 	movieHandler := handlers.NewMovieHandler(movieRepo)
 	authHandler := handlers.NewAuthHandler(authService)
 	onboardingHandler := handlers.NewOnboardingHandler(onboardingService)
+	chatHandler := handlers.NewChatHandler(chatService)
 
 	r.Route("/api", func(api chi.Router) {
-		// public routes - no auth required
 		api.Post("/auth/register", authHandler.Register())
 		api.Post("/auth/signup", authHandler.Signup())
 		api.Post("/auth/login", authHandler.Login())
@@ -57,11 +58,14 @@ func NewServer(
 		api.Get("/movies/{id}", movieHandler.GetMovieByID())
 		api.Get("/movies/{id}/crew", movieHandler.GetMovieCrew())
 		api.Get("/movies/{id}/related", movieHandler.GetRelatedMovies())
+		api.Get("/movies/{id}/graph-related", movieHandler.GetGraphRelatedMovies())
 
-		// protected routes - auth required
+		api.Post("/chat", chatHandler.Chat())
+
 		api.Group(func(protected chi.Router) {
 			protected.Use(custommiddleware.Auth(jwt))
 			protected.Post("/users/onboard", onboardingHandler.SaveOnboarding())
+			protected.Get("/recommendations/graph", movieHandler.GetGraphUserRecommendations())
 		})
 	})
 
