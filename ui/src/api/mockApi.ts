@@ -1,4 +1,4 @@
-import type { Movie, User, AnalyticsData, UserOnboardingData } from "../types/movie";
+import type { Movie, User, AnalyticsData, UserOnboardingData, GraphRelatedMovies } from "../types/movie";
 
 export const MOCK_MOVIES: Movie[] = [
   {
@@ -144,6 +144,11 @@ export const mockApi = {
     }));
   },
 
+  getGraphUserRecommendations: async (): Promise<Movie[]> => {
+    await delay(600);
+    return MOCK_MOVIES.slice(2, 10);
+  },
+
   searchMovies: async (query: string): Promise<Movie[]> => {
     await delay(350);
     if (!query.trim()) return MOCK_MOVIES;
@@ -165,6 +170,16 @@ export const mockApi = {
   getRelatedMovies: async (movieId: number): Promise<Movie[]> => {
     await delay(300);
     return MOCK_MOVIES.filter((m) => m.id !== movieId).slice(0, 4);
+  },
+
+  getGraphRelatedMovies: async (movieId: number): Promise<GraphRelatedMovies | null> => {
+    await delay(400);
+    const others = MOCK_MOVIES.filter((m) => m.id !== movieId);
+    return {
+      same_director: others.slice(0, 4),
+      same_actors: others.slice(4, 8),
+      similar_theme: others.slice(8, 12),
+    };
   },
 
   getAnalytics: async (): Promise<AnalyticsData> => {

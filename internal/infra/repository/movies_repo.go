@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/google/uuid"
 )
 
 type MovieRepo struct {
@@ -420,4 +421,164 @@ func (m *MovieRepo) GetRelatedMovies(
 	}
 
 	return movies, nil
+}
+
+func (m *MovieRepo) fetchGraphSubset(ctx context.Context, paramJSON string, cypherPart string, asClause string) ([]domain.RawMovie, error) {
+	sql := `
+		WITH graph_recs AS (
+			SELECT cast(rec_id as text)::bigint AS tmdb_id
+			FROM cypher('movie_graph', $$
+			` + cypherPart + `
+			$$, $1::agtype) ` + asClause + `
+		)
+		SELECT
+			m.tmdb_id,
+			m.imdb_id,
+			m.title,
+			m.original_title,
+			to_char(m.release_date, 'YYYY-MM-DD') AS release_date,
+			m.release_year,
+			m.runtime_min,
+			m.original_lang,
+			m.overview,
+			m.popularity,
+			m.vote_avg,
+			m.vote_count,
+			m.budget,
+			m.revenue,
+			m.mpaa_rating,
+			m.poster_path,
+			m.enriched,
+			coalesce(g.names, '{}'::text[]) AS genres,
+			coalesce(t.tags, '{}'::text[]) AS mood_tags,
+			d.director_name,
+			coalesce(c.cast_names, '{}'::text[]) AS cast_names
+		FROM movies m
+		JOIN graph_recs gr ON m.tmdb_id = gr.tmdb_id
+		LEFT JOIN LATERAL (
+			SELECT array_agg(g.name ORDER BY g.name) AS names
+			FROM movie_genres mg
+			JOIN genres g ON g.id = mg.genre_id
+			WHERE mg.movie_id = m.tmdb_id
+		) g ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT array_agg(mt.tag_value ORDER BY mt.tag_value) AS tags
+			FROM movie_tags mt
+			WHERE mt.movie_id = m.tmdb_id AND mt.tag_key = 'mood'
+		) t ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT p.primary_name AS director_name
+			FROM movie_crew mc
+			JOIN persons p ON p.imdb_id = mc.person_id
+			WHERE mc.movie_id = m.tmdb_id AND mc.role = 'director'
+			ORDER BY mc.ordering NULLS LAST
+			LIMIT 1
+		) d ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT array_agg(name ORDER BY ord) AS cast_names
+			FROM (
+				SELECT p.primary_name AS name, mc.ordering AS ord
+				FROM movie_crew mc
+				JOIN persons p ON p.imdb_id = mc.person_id
+				WHERE mc.movie_id = m.tmdb_id AND mc.role = 'actor'
+				ORDER BY mc.ordering NULLS LAST
+				LIMIT 8
+			) cast_members
+		) c ON TRUE
+	`
+
+	rows, err := m.db.Query(ctx, sql, paramJSON)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var movies []domain.RawMovie
+	for rows.Next() {
+		var movie domain.RawMovie
+		if err := rows.Scan(
+			&movie.TMDBID, &movie.IMDBID, &movie.Title, &movie.OriginalTitle,
+			&movie.ReleaseDate, &movie.ReleaseYear, &movie.RuntimeMin,
+			&movie.OriginalLang, &movie.Overview, &movie.Popularity,
+			&movie.VoteAvg, &movie.VoteCount, &movie.Budget, &movie.Revenue,
+			&movie.MPAARating, &movie.PosterPath, &movie.Enriched,
+			&movie.Genres, &movie.MoodTags, &movie.DirectorName, &movie.CastNames,
+		); err != nil {
+			return nil, err
+		}
+		movies = append(movies, movie)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return movies, nil
+}
+
+func (m *MovieRepo) GetGraphRelatedMoviesData(ctx context.Context, id int64) (*domain.GraphRelatedMovies, error) {
+	result := &domain.GraphRelatedMovies{}
+	
+	dirQuery := `MATCH (m:Movie {movie_id: $id})<-[:DIRECTED]-(p:Person)-[:DIRECTED]->(rec:Movie)
+				 WHERE rec <> m
+				 RETURN DISTINCT rec.movie_id LIMIT 8`
+	dirs, err := m.fetchGraphSubset(ctx, fmt.Sprintf(`{"id": %d}`, id), dirQuery, "AS (rec_id agtype)")
+	if err != nil {
+		return nil, err
+	}
+	result.SameDirector = dirs
+
+	actQuery := `MATCH (m:Movie {movie_id: $id})<-[:ACTED_IN]-(p:Person)-[:ACTED_IN]->(rec:Movie)
+				 WHERE rec <> m
+				 RETURN DISTINCT rec.movie_id LIMIT 8`
+	acts, err := m.fetchGraphSubset(ctx, fmt.Sprintf(`{"id": %d}`, id), actQuery, "AS (rec_id agtype)")
+	if err != nil {
+		return nil, err
+	}
+	result.SameActors = acts
+
+	themeQuery := `MATCH (m:Movie {movie_id: $id})-[:IN_GENRE]->(g:Genre)<-[:IN_GENRE]-(rec:Movie)
+				   WHERE rec <> m
+				   WITH rec.movie_id AS m_id, count(DISTINCT g) as overlap
+				   RETURN m_id, overlap ORDER BY overlap DESC LIMIT 8`
+	themes, err := m.fetchGraphSubset(ctx, fmt.Sprintf(`{"id": %d}`, id), themeQuery, "AS (rec_id agtype, overlap agtype)")
+	if err != nil {
+		return nil, err
+	}
+	result.SimilarTheme = themes
+
+	return result, nil
+}
+
+func (m *MovieRepo) GetUserGraphRecommendations(ctx context.Context, userID uuid.UUID) ([]domain.RawMovie, error) {
+	param := fmt.Sprintf(`{"uid": "%s"}`, userID.String())
+
+	// Try genre-based graph traversing first for unseen movies
+	recQuery := `MATCH (u:User {user_id: $uid})-[r:RATED]->(m1:Movie)-[:IN_GENRE]->(g:Genre)
+				 WHERE r.rating >= 4.0
+				 WITH u, collect(DISTINCT g) AS fav_genres
+				 MATCH (m2:Movie)-[:IN_GENRE]->(g2:Genre)
+				 WHERE g2 IN fav_genres
+				   AND NOT exists((u)-[:WATCHED]->(m2))
+				   AND NOT exists((u)-[:RATED]->(m2))
+				 WITH m2.movie_id AS m_id, m2.vote_avg AS vote, count(DISTINCT g2) AS overlap
+				 RETURN m_id, overlap, vote ORDER BY overlap DESC, vote DESC LIMIT 20`
+	
+	recs, err := m.fetchGraphSubset(ctx, param, recQuery, "AS (rec_id agtype, overlap agtype, vote agtype)")
+	if err != nil {
+		return nil, err
+	}
+
+	if len(recs) > 0 {
+		return recs, nil
+	}
+
+	// Fallback to globally popular unseen movies via graph traversal
+	fallbackQuery := `MATCH (u:User {user_id: $uid})
+					  MATCH (m:Movie)
+					  WHERE NOT exists((u)-[:WATCHED]->(m))
+						AND NOT exists((u)-[:RATED]->(m))
+					  WITH m.movie_id AS m_id, m.vote_avg AS vote
+					  RETURN m_id, vote ORDER BY vote DESC LIMIT 20`
+	return m.fetchGraphSubset(ctx, param, fallbackQuery, "AS (rec_id agtype, vote agtype)")
 }
