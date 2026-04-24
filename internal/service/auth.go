@@ -163,6 +163,53 @@ func (s *AuthService) Signup(ctx context.Context, req domain.SignupRequest) (*do
 			return fmt.Errorf("create mood profile: %w", err)
 		}
 
+		// 4. insert user into graph
+		_, err = s.db.Exec(txCtx, `
+			SELECT * FROM cypher('movie_graph', $$
+				MERGE (u:User {user_id: $uid, username: $uname})
+			$$, $1::agtype) AS (v agtype)`,
+			fmt.Sprintf(`{"uid": "%s", "uname": "%s"}`, user.ID.String(), user.Username),
+		)
+		if err != nil {
+			return fmt.Errorf("create graph user node: %w", err)
+		}
+
+		// 5. create graph edges for liked
+		if len(req.LikedIDs) > 0 {
+			for _, mid := range req.LikedIDs {
+				_, err = s.db.Exec(txCtx, `
+					SELECT * FROM cypher('movie_graph', $$
+						MATCH (u:User {user_id: $uid})
+						MATCH (m:Movie {movie_id: $mid})
+						MERGE (u)-[:WATCHED]->(m)
+						MERGE (u)-[:RATED {rating: 5.0}]->(m)
+					$$, $1::agtype) AS (v agtype)`,
+					fmt.Sprintf(`{"uid": "%s", "mid": %d}`, user.ID.String(), mid),
+				)
+				if err != nil {
+					return fmt.Errorf("create graph liked edge mid=%d: %w", mid, err)
+				}
+			}
+		}
+
+		// 6. create graph edges for disliked
+		if len(req.DislikedIDs) > 0 {
+			for _, mid := range req.DislikedIDs {
+				_, err = s.db.Exec(txCtx, `
+					SELECT * FROM cypher('movie_graph', $$
+						MATCH (u:User {user_id: $uid})
+						MATCH (m:Movie {movie_id: $mid})
+						MERGE (u)-[:WATCHED]->(m)
+						MERGE (u)-[:RATED {rating: 1.0}]->(m)
+					$$, $1::agtype) AS (v agtype)`,
+					fmt.Sprintf(`{"uid": "%s", "mid": %d}`, user.ID.String(), mid),
+				)
+				if err != nil {
+					return fmt.Errorf("create graph disliked edge mid=%d: %w", mid, err)
+				}
+			}
+		}
+
 		return nil
 	})
 	if err != nil {

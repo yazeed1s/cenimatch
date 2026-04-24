@@ -6,6 +6,7 @@ import (
 	"cenimatch/internal/infra/http/server"
 	"cenimatch/internal/infra/repository"
 	"cenimatch/internal/infra/security"
+	"cenimatch/internal/llm"
 	"cenimatch/internal/service"
 	"fmt"
 	"strconv"
@@ -44,7 +45,10 @@ func New(cfg *config.Config) (*Container, error) {
 	authService := service.NewAuthService(userRepo, db, hasher, jwt, refreshGen)
 	onboardingService := service.NewOnboardingService(db)
 
-	srv := server.NewServer(p, jwt, authService, onboardingService, movieRepo)
+	llmClient := llm.NewClient(cfg.OpenRouterAPIKey)
+	chatService := service.NewChatService(llmClient, pool)
+
+	srv := server.NewServer(p, jwt, authService, onboardingService, movieRepo, chatService)
 
 	return &Container{
 		Cfg:    cfg,

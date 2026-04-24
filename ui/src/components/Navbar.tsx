@@ -34,6 +34,9 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
           <button className={`nav-link ${active("/search") ? "active" : ""}`} onClick={() => navigate("/search")}>
             Search
           </button>
+          <button className={`nav-link ${active("/chat") ? "active" : ""}`} onClick={() => navigate("/chat")}>
+            <SparkleIcon /> Ask AI
+          </button>
           <button className={`nav-link ${active("/dashboard") ? "active" : ""}`} onClick={() => navigate("/dashboard")}>
             <BarIcon /> Analytics
           </button>
@@ -95,6 +98,16 @@ function BarIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
+}
+
+function SparkleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z" />
+      <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
+      <path d="M5 19l.5 1.5L7 21l-1.5.5L5 23l-.5-1.5L3 21l1.5-.5z" />
     </svg>
   );
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	custommiddleware "cenimatch/internal/infra/http/middleware"
 	"cenimatch/internal/infra/http/utils"
 	"cenimatch/internal/ports"
 	"errors"
@@ -94,6 +95,24 @@ func (h *MovieHandler) GetRelatedMovies() http.HandlerFunc {
 	}
 }
 
+func (h *MovieHandler) GetGraphRelatedMovies() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			utils.BadRequest(w, "invalid movie id")
+			return
+		}
+
+		movies, err := h.repo.GetGraphRelatedMoviesData(r.Context(), id)
+		if err != nil {
+			utils.InternalServerError(w, err.Error())
+			return
+		}
+
+		utils.Success(w, movies)
+	}
+}
+
 func (h *MovieHandler) GetMovieCrew() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
@@ -113,6 +132,24 @@ func (h *MovieHandler) GetMovieCrew() http.HandlerFunc {
 		}
 
 		utils.Success(w, crew)
+	}
+}
+
+func (h *MovieHandler) GetGraphUserRecommendations() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := custommiddleware.UserIDFromContext(r.Context())
+		if !ok {
+			utils.Unauthorized(w, "unauthorized")
+			return
+		}
+
+		movies, err := h.repo.GetUserGraphRecommendations(r.Context(), userID)
+		if err != nil {
+			utils.InternalServerError(w, err.Error())
+			return
+		}
+
+		utils.Success(w, movies)
 	}
 }
 

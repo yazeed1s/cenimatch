@@ -18,6 +18,7 @@ type Config struct {
 	BcryptCost             int
 	JWTExpiration          time.Duration
 	RefreshTokenExpiration time.Duration
+	OpenRouterAPIKey       string
 }
 
 type dummyConfig struct {
@@ -133,11 +134,12 @@ func Load() (*Config, error) {
 		Environment: env,
 		// infrastructure is always loaded from env,
 		// regardless of mode
-		DatabaseURL: l.required("DATABASE_URL"),
-		KaggleToken: l.optional("KAGGLE_API_TOKEN"),
-		JWTSecret:   l.required("JWT_SECRET"),
-		JWTIssuer:   l.required("JWT_ISSUER"),
-		Port:        l.required("PORT"),
+		DatabaseURL:      l.required("DATABASE_URL"),
+		KaggleToken:      l.optional("KAGGLE_API_TOKEN"),
+		JWTSecret:        l.required("JWT_SECRET"),
+		JWTIssuer:        l.required("JWT_ISSUER"),
+		Port:             l.required("PORT"),
+		OpenRouterAPIKey: l.optional("OPENROUTER_API_KEY"),
 	}
 
 	if isProd {

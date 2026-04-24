@@ -13,16 +13,24 @@ interface HomePageProps {
 export default function HomePage({ user }: HomePageProps) {
   const [mood, setMood] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<Movie[]>([]);
+  const [graphRecs, setGraphRecs] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
     setLoading(true);
-    api.listMovies(50)
-      .then((movies) => setCatalog(movies))
-      .catch(() => setCatalog([]))
-      .finally(() => setLoading(false));
-  }, []);
+    let catalogPromise = api.listMovies(50).then(movies => setCatalog(movies)).catch(() => setCatalog([]));
+
+    // Only fetch graph recommendations if a user exists
+    if (user) {
+      api.getGraphUserRecommendations()
+        .then(recs => setGraphRecs(recs))
+        .catch(() => setGraphRecs([]))
+        .finally(() => setLoading(false));
+    } else {
+      catalogPromise.finally(() => setLoading(false));
+    }
+  }, [user]);
 
   const trending = useMemo(() => catalog.slice(0, 5), [catalog]);
   const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating).slice(0, 6), [catalog]);
@@ -106,16 +114,34 @@ export default function HomePage({ user }: HomePageProps) {
               <div className="spinner" />
             </div>
           ) : (
-            <div className="results-grid">
-              {recs.map((m, i) => (
-                <MovieCard
-                  key={m.id}
-                  movie={m}
-                  onClick={(mv) => navigate(`/movie/${mv.id}`)}
-                  showExplanation={i < 5}
-                />
-              ))}
-            </div>
+            <>
+              {user && graphRecs.length > 0 && (
+                <div style={{ marginBottom: 40 }}>
+                  <div className="row-title" style={{ marginBottom: 12, fontSize: 18, color: "var(--accent)" }}>
+                    Discovered via Graph Traversal
+                  </div>
+                  <div className="movie-scroller">
+                    {graphRecs.map((m) => (
+                      <MovieCard key={`graph-${m.id}`} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="row-title" style={{ marginBottom: 12, fontSize: 18 }}>
+                General Recommendations
+              </div>
+              <div className="results-grid">
+                {recs.map((m, i) => (
+                  <MovieCard
+                    key={`gen-${m.id}`}
+                    movie={m}
+                    onClick={(mv) => navigate(`/movie/${mv.id}`)}
+                    showExplanation={i < 5}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
 

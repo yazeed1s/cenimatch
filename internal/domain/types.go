@@ -37,3 +37,9 @@ type MovieCrewMember struct {
 type MovieCrew struct {
 	Members []MovieCrewMember `json:"members"`
 }
+
+type GraphRelatedMovies struct {
+	SameDirector []RawMovie `json:"same_director"`
+	SameActors   []RawMovie `json:"same_actors"`
+	SimilarTheme []RawMovie `json:"similar_theme"`
+}

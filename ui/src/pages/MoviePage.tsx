@@ -4,7 +4,7 @@ import MovieCard from "../components/MovieCard";
 import { realApi as api } from "../api/realApi";
 import type { MovieCrewMember } from "../api/realApi";
 import { MOODS } from "../types/movie";
-import type { Movie } from "../types/movie";
+import type { Movie, GraphRelatedMovies } from "../types/movie";
 
 export default function MoviePage() {
   const { id } = useParams<{ id: string }>();
@@ -12,7 +12,7 @@ export default function MoviePage() {
 
   const [movie, setMovie] = useState<Movie | null>(null);
   const [crew, setCrew] = useState<MovieCrewMember[]>([]);
-  const [related, setRelated] = useState<Movie[]>([]);
+  const [graphRelated, setGraphRelated] = useState<GraphRelatedMovies | null>(null);
   const [loading, setLoading] = useState(true);
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [rating, setRating] = useState(0);
@@ -27,7 +27,7 @@ export default function MoviePage() {
     setRating(0);
     setLiked(false);
     setCrew([]);
-    setRelated([]);
+    setGraphRelated(null);
 
     api.getMovieById(Number(id))
       .then((mv) => {
@@ -47,10 +47,10 @@ export default function MoviePage() {
         if (!cancelled) setCrew([]);
       });
 
-    api.getRelatedMovies(Number(id))
+    api.getGraphRelatedMovies(Number(id))
       .then((rel) => {
         if (cancelled) return;
-        setRelated(rel);
+        setGraphRelated(rel);
       })
       .finally(() => {
         if (!cancelled) setRelatedLoading(false);
@@ -87,8 +87,23 @@ export default function MoviePage() {
   const displayRating = movie.rating.toFixed(1);
 
   const actorCrew = crew.filter((member) => member.role === "actor");
-  const nonActorCrew = crew.filter((member) => member.role !== "actor");
-  const directorName = crew.find((member) => member.role === "director")?.name || movie.director;
+  const directorCrew = crew.filter(m => m.role === "director");
+  const producerCrew = crew.filter(m => m.role === "producer" || m.job?.toLowerCase().includes("producer") || m.job?.toLowerCase().includes("executive"));
+  const otherCrew = crew.filter(m => m.role !== "actor" && m.role !== "director" && !(m.role === "producer" || m.job?.toLowerCase().includes("producer") || m.job?.toLowerCase().includes("executive")));
+  const directorName = directorCrew.length > 0
+    ? directorCrew.map((d) => d.name).join(", ")
+    : movie.director;
+
+  function formatRoleString(role?: string | null) {
+    if (!role) return "";
+    try {
+      const parsed = JSON.parse(role);
+      if (Array.isArray(parsed)) return parsed.join(", ");
+      return String(parsed);
+    } catch {
+      return role;
+    }
+  }
 
   return (
     <div>
@@ -132,7 +147,7 @@ export default function MoviePage() {
               </div>
               <p className="movie-plot">{movie.plot}</p>
               <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8, fontWeight: 600, letterSpacing: 1.5, textTransform: "uppercase" }}>Director</div>
+                <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8, fontWeight: 600, letterSpacing: 1.5, textTransform: "uppercase" }}>{directorCrew.length > 1 ? "Directors" : "Director"}</div>
                 <div style={{ fontSize: 15 }}>{directorName}</div>
               </div>
               {movie.mood.length > 0 && (
@@ -171,24 +186,70 @@ export default function MoviePage() {
           </div>
         </div>
 
-        {/* ── Cast ── */}
         <div className="cast-section">
-          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 700, marginBottom: 20 }}>Cast</div>
-          <div className="cast-grid">
-            {actorCrew.map((member, i) => (
-              <div key={`${member.name}-${i}`} className="cast-card fade-in">
-                <div className="cast-avatar">{["🎭", "🎬", "⭐"][i % 3]}</div>
-                <div className="cast-name">{member.name}</div>
-                <div className="cast-role">{member.character || "Actor"}</div>
+          <div className="cast-columns">
+            {/* ── Directors & Producers ── */}
+            {(directorCrew.length > 0 || producerCrew.length > 0) && (
+              <div>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Directors & Producers</div>
+                <div className="cast-grid">
+                  {directorCrew.map((member, i) => (
+                    <div key={`dir-${member.name}-${i}`} className="cast-card fade-in" style={{ borderLeft: "3px solid var(--accent)" }}>
+                      <img src={`https://api.dicebear.com/9.x/micah/svg?seed=${encodeURIComponent(member.name)}&backgroundColor=transparent`} alt="" className="cast-avatar" />
+                      <div className="cast-info">
+                        <div className="cast-name">{member.name}</div>
+                        <div className="cast-role">{formatRoleString(member.job || member.role)}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {producerCrew.map((member, i) => (
+                    <div key={`prod-${member.name}-${i}`} className="cast-card fade-in" style={{ borderLeft: "3px solid #a3e635" }}>
+                      <img src={`https://api.dicebear.com/9.x/micah/svg?seed=${encodeURIComponent(member.name)}&backgroundColor=transparent`} alt="" className="cast-avatar" />
+                      <div className="cast-info">
+                        <div className="cast-name">{member.name}</div>
+                        <div className="cast-role">{formatRoleString(member.job || member.role)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-            {nonActorCrew.map((member, i) => (
-              <div key={`${member.role}-${member.name}-${i}`} className="cast-card fade-in">
-                <div className="cast-avatar">🎥</div>
-                <div className="cast-name">{member.name}</div>
-                <div className="cast-role">{member.job || member.role}</div>
+            )}
+
+            {/* ── Cast ── */}
+            {actorCrew.length > 0 && (
+              <div>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Cast</div>
+                <div className="cast-grid">
+                  {actorCrew.map((member, i) => (
+                    <div key={`act-${member.name}-${i}`} className="cast-card fade-in">
+                      <img src={`https://api.dicebear.com/9.x/micah/svg?seed=${encodeURIComponent(member.name)}&backgroundColor=transparent`} alt="" className="cast-avatar" />
+                      <div className="cast-info">
+                        <div className="cast-name">{member.name}</div>
+                        <div className="cast-role">{formatRoleString(member.character) || "Actor"}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
+
+            {/* ── Other Crew ── */}
+            {otherCrew.length > 0 && (
+              <div>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Other Crew</div>
+                <div className="cast-grid">
+                  {otherCrew.map((member, i) => (
+                    <div key={`oth-${member.name}-${i}`} className="cast-card fade-in">
+                      <img src={`https://api.dicebear.com/9.x/micah/svg?seed=${encodeURIComponent(member.name)}&backgroundColor=transparent`} alt="" className="cast-avatar" />
+                      <div className="cast-info">
+                        <div className="cast-name">{member.name}</div>
+                        <div className="cast-role">{formatRoleString(member.job || member.role)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -199,19 +260,46 @@ export default function MoviePage() {
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 700, marginBottom: 4 }}>You Might Also Like</div>
             <div style={{ fontSize: 13, color: "var(--text3)" }}>
-              Discovered via Apache AGE graph traversal — shared director, cast &amp; thematic similarity
+              Discovered via Apache AGE graph traversal
             </div>
           </div>
           {relatedLoading ? (
             <div style={{ fontSize: 13, color: "var(--text3)" }}>loading related movies...</div>
-          ) : related.length === 0 ? (
+          ) : !graphRelated ? (
             <div style={{ fontSize: 13, color: "var(--text3)" }}>no related movies found yet.</div>
           ) : (
-            <div className="movie-scroller">
-              {related.map((m) => (
-                <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
-              ))}
-            </div>
+            <>
+              {graphRelated.same_director && graphRelated.same_director.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <h3 style={{ fontSize: 15, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1.2, color: "var(--text2)" }}>Connected by Director</h3>
+                  <div className="movie-scroller">
+                    {graphRelated.same_director.map((m) => (
+                      <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {graphRelated.same_actors && graphRelated.same_actors.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <h3 style={{ fontSize: 15, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1.2, color: "var(--text2)" }}>Connected by Cast</h3>
+                  <div className="movie-scroller">
+                    {graphRelated.same_actors.map((m) => (
+                      <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {graphRelated.similar_theme && graphRelated.similar_theme.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <h3 style={{ fontSize: 15, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1.2, color: "var(--text2)" }}>Similar Themes & Genres</h3>
+                  <div className="movie-scroller">
+                    {graphRelated.similar_theme.map((m) => (
+                      <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
