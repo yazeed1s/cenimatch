@@ -37,12 +37,12 @@ export default function MovieCard({ movie, onClick, showExplanation = false }: M
           <span className="rating-badge">
             <StarIcon filled size={13} /> {displayRating}
           </span>
-          <button
+          {/* <button
             className={`heart-btn ${liked ? "active" : ""}`}
             onClick={(e) => { e.stopPropagation(); setLiked(!liked); }}
           >
             <HeartIcon filled={liked} />
-          </button>
+          </button> */}
         </div>
       </div>
 

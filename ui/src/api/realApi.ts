@@ -322,4 +322,16 @@ export const realApi = {
       method: "POST",
       body: JSON.stringify({ messages }),
     }),
+    async sendLocation(lat: number, lon: number): Promise<void> {
+      try {
+        await fetch(`${BASE_URL}/location`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lat, lon }),
+        });
+      } catch (err) {
+        console.warn("Location API not available yet:", err);
+      }
+    },
 };
+  

@@ -30,35 +30,18 @@ export default function MoviePage() {
     setGraphRelated(null);
 
     api.getMovieById(Number(id))
-      .then((mv) => {
-        if (cancelled) return;
-        setMovie(mv);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .then((mv) => { if (cancelled) return; setMovie(mv); })
+      .finally(() => { if (!cancelled) setLoading(false); });
 
     api.getMovieCrew(Number(id))
-      .then((data) => {
-        if (cancelled) return;
-        setCrew(data.members ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setCrew([]);
-      });
+      .then((data) => { if (cancelled) return; setCrew(data.members ?? []); })
+      .catch(() => { if (!cancelled) setCrew([]); });
 
     api.getGraphRelatedMovies(Number(id))
-      .then((rel) => {
-        if (cancelled) return;
-        setGraphRelated(rel);
-      })
-      .finally(() => {
-        if (!cancelled) setRelatedLoading(false);
-      });
+      .then((rel) => { if (cancelled) return; setGraphRelated(rel); })
+      .finally(() => { if (!cancelled) setRelatedLoading(false); });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [id]);
 
   async function handleRate(val: number) {
@@ -85,14 +68,11 @@ export default function MoviePage() {
   }
 
   const displayRating = movie.rating.toFixed(1);
-
   const actorCrew = crew.filter((member) => member.role === "actor");
   const directorCrew = crew.filter(m => m.role === "director");
   const producerCrew = crew.filter(m => m.role === "producer" || m.job?.toLowerCase().includes("producer") || m.job?.toLowerCase().includes("executive"));
   const otherCrew = crew.filter(m => m.role !== "actor" && m.role !== "director" && !(m.role === "producer" || m.job?.toLowerCase().includes("producer") || m.job?.toLowerCase().includes("executive")));
-  const directorName = directorCrew.length > 0
-    ? directorCrew.map((d) => d.name).join(", ")
-    : movie.director;
+  const directorName = directorCrew.length > 0 ? directorCrew.map((d) => d.name).join(", ") : movie.director;
 
   function formatRoleString(role?: string | null) {
     if (!role) return "";
@@ -116,7 +96,6 @@ export default function MoviePage() {
         </div>
         <div className="container" style={{ width: "100%" }}>
           <div className="movie-hero-content">
-            {/* Poster */}
             <div className="movie-poster-lg">
               {movie.poster ? (
                 <img src={movie.poster} alt={movie.title} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -125,7 +104,6 @@ export default function MoviePage() {
               )}
             </div>
 
-            {/* Info */}
             <div className="movie-info-main">
               <div className="movie-meta-row">
                 {movie.genre.map((g) => <span key={g} className="tag tag-accent">{g}</span>)}
@@ -160,11 +138,12 @@ export default function MoviePage() {
                 </div>
               )}
               <div className="movie-actions">
-                <button className="btn btn-primary"><PlayIcon /> Watch Trailer</button>
-                <button className={`heart-btn ${liked ? "active" : ""}`} style={{ width: 40, height: 40 }} onClick={() => setLiked(!liked)}>
-                  <HeartIcon filled={liked} />
+                <button className="btn btn-primary" onClick={() => { setLiked(!liked); showToast(liked ? "Removed from saved" : "Saved to your list!", "success"); }}>
+                  <BookmarkIcon filled={liked} /> {liked ? "Saved" : "Save Film"}
                 </button>
-                <button className="btn btn-ghost btn-sm">+ Watchlist</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => showToast("Got it — we'll recommend similar films.", "success")}>
+                  <ThumbsUpIcon /> Like this style
+                </button>
               </div>
             </div>
           </div>
@@ -186,9 +165,9 @@ export default function MoviePage() {
           </div>
         </div>
 
+        {/* ── Cast & Crew ── */}
         <div className="cast-section">
           <div className="cast-columns">
-            {/* ── Directors & Producers ── */}
             {(directorCrew.length > 0 || producerCrew.length > 0) && (
               <div>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Directors & Producers</div>
@@ -215,7 +194,6 @@ export default function MoviePage() {
               </div>
             )}
 
-            {/* ── Cast ── */}
             {actorCrew.length > 0 && (
               <div>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Cast</div>
@@ -233,7 +211,6 @@ export default function MoviePage() {
               </div>
             )}
 
-            {/* ── Other Crew ── */}
             {otherCrew.length > 0 && (
               <div>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Other Crew</div>
@@ -339,15 +316,20 @@ function StarIcon({ filled, size = 16 }: { filled?: boolean; size?: number }) {
     </svg>
   );
 }
-function HeartIcon({ filled }: { filled: boolean }) {
+function BookmarkIcon({ filled }: { filled: boolean }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill={filled ? "#e85555" : "none"} stroke={filled ? "#e85555" : "currentColor"} strokeWidth="2">
-      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
     </svg>
   );
 }
-function PlayIcon() {
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>;
+function ThumbsUpIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z" />
+      <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
+    </svg>
+  );
 }
 function XIcon() {
   return (
