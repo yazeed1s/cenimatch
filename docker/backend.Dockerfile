@@ -2,11 +2,14 @@ FROM golang:1.26.1-alpine AS builder
 
 WORKDIR /app
 
+ARG TARGETOS=linux
+ARG TARGETARCH=arm64
+
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/cenimatch ./cmd/cenimatch
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/cenimatch ./cmd/cenimatch
 
 FROM alpine:3.22
 
