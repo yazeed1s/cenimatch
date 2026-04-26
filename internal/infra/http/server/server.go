@@ -23,6 +23,7 @@ type Server struct {
 
 func NewServer(
 	port int,
+	allowedOrigins []string,
 	jwt ports.JWTGenerator,
 	authService *service.AuthService,
 	onboardingService *service.OnboardingService,
@@ -32,6 +33,10 @@ func NewServer(
 
 	r := chi.NewRouter()
 	cors := custommiddleware.DefaultCORSConfig()
+	if len(allowedOrigins) > 0 {
+		// Keep local dev origins and extend with configured public origins.
+		cors.AllowedOrigins = append(cors.AllowedOrigins, allowedOrigins...)
+	}
 	r.Use(custommiddleware.CORS(cors))
 
 	r.Use(middleware.Logger)

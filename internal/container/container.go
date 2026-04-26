@@ -48,7 +48,15 @@ func New(cfg *config.Config) (*Container, error) {
 	llmClient := llm.NewClient(cfg.OpenRouterAPIKey)
 	chatService := service.NewChatService(llmClient, pool)
 
-	srv := server.NewServer(p, jwt, authService, onboardingService, movieRepo, chatService)
+	srv := server.NewServer(
+		p,
+		cfg.CORSAllowedOrigins,
+		jwt,
+		authService,
+		onboardingService,
+		movieRepo,
+		chatService,
+	)
 
 	return &Container{
 		Cfg:    cfg,

@@ -192,9 +192,11 @@ function ChatBubble({
           {msg.resultType === "movies" && msg.movies && msg.movies.length > 0 && (
             <div className="chat-movie-grid">
               {msg.movies.map((movie) => (
-                <div key={movie.id} onClick={() => onMovieClick(movie.id)} style={{ cursor: "pointer" }}>
-                  <MovieCard movie={movie} />
-                </div>
+                <MovieCard
+                  key={movie.id}
+                  movie={movie}
+                  onClick={() => onMovieClick(movie.id)}
+                />
               ))}
             </div>
           )}
