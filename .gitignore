@@ -8,3 +8,4 @@ backup.sql*
 report.tex
 ui/tsconfig.tsbuildinfo
 cenimatch
+.gocache

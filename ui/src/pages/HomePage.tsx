@@ -129,16 +129,22 @@ const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating),
             </div>
           ) : (
             <>
-              {user && graphRecs.length > 0 && (
+              {user && (
                 <div style={{ marginBottom: 40 }}>
                   <div className="row-title" style={{ marginBottom: 12, fontSize: 18, color: "var(--accent)" }}>
-                    Discovered via Graph Traversal
+                    Similar Users Also Liked
                   </div>
-                  <div className="movie-scroller">
-                    {graphRecs.map((m) => (
-                      <MovieCard key={`graph-${m.id}`} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
-                    ))}
-                  </div>
+                  {graphRecs.length > 0 ? (
+                    <div className="movie-scroller">
+                      {graphRecs.map((m) => (
+                        <MovieCard key={`graph-${m.id}`} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 13, color: "var(--text3)" }}>
+                      We need a bit more activity to find users with overlapping taste.
+                    </div>
+                  )}
                 </div>
               )}
 

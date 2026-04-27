@@ -27,6 +27,7 @@ func NewServer(
 	jwt ports.JWTGenerator,
 	authService *service.AuthService,
 	onboardingService *service.OnboardingService,
+	feedbackService *service.FeedbackService,
 	movieRepo ports.MovieRepository,
 	chatService *service.ChatService,
 ) *Server {
@@ -49,6 +50,7 @@ func NewServer(
 	movieHandler := handlers.NewMovieHandler(movieRepo)
 	authHandler := handlers.NewAuthHandler(authService)
 	onboardingHandler := handlers.NewOnboardingHandler(onboardingService)
+	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
 	chatHandler := handlers.NewChatHandler(chatService)
 
 	r.Route("/api", func(api chi.Router) {
@@ -70,6 +72,9 @@ func NewServer(
 		api.Group(func(protected chi.Router) {
 			protected.Use(custommiddleware.Auth(jwt))
 			protected.Post("/users/onboard", onboardingHandler.SaveOnboarding())
+			protected.Get("/feedback/{movieID}", feedbackHandler.GetFeedback())
+			protected.Post("/feedback", feedbackHandler.SubmitFeedback())
+			protected.Post("/feedback/not-interested", feedbackHandler.MarkNotInterested())
 			protected.Get("/recommendations/graph", movieHandler.GetGraphUserRecommendations())
 		})
 	})

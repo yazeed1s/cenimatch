@@ -137,7 +137,7 @@ func (m *MovieRepo) ListMovies(
 	}
 	defer rows.Close()
 
-	var movies []domain.RawMovie
+	movies := make([]domain.RawMovie, 0)
 	for rows.Next() {
 		var movie domain.RawMovie
 		err := rows.Scan(
@@ -553,32 +553,25 @@ func (m *MovieRepo) GetGraphRelatedMoviesData(ctx context.Context, id int64) (*d
 func (m *MovieRepo) GetUserGraphRecommendations(ctx context.Context, userID uuid.UUID) ([]domain.RawMovie, error) {
 	param := fmt.Sprintf(`{"uid": "%s"}`, userID.String())
 
-	// Try genre-based graph traversing first for unseen movies
-	recQuery := `MATCH (u:User {user_id: $uid})-[r:RATED]->(m1:Movie)-[:IN_GENRE]->(g:Genre)
-				 WHERE r.rating >= 4.0
-				 WITH u, collect(DISTINCT g) AS fav_genres
-				 MATCH (m2:Movie)-[:IN_GENRE]->(g2:Genre)
-				 WHERE g2 IN fav_genres
-				   AND NOT exists((u)-[:WATCHED]->(m2))
-				   AND NOT exists((u)-[:RATED]->(m2))
-				 WITH m2.movie_id AS m_id, m2.vote_avg AS vote, count(DISTINCT g2) AS overlap
-				 RETURN m_id, overlap, vote ORDER BY overlap DESC, vote DESC LIMIT 20`
-	
-	recs, err := m.fetchGraphSubset(ctx, param, recQuery, "AS (rec_id agtype, overlap agtype, vote agtype)")
+	// Try collaborative filtering: unseen movies liked by users with overlapping taste.
+	recQuery := `MATCH (u:User {user_id: $uid})-[r:RATED]->(m:Movie)
+					 WHERE r.rating >= 4.0 AND coalesce(r.not_interested, false) = false
+					 MATCH (other:User)-[r2:RATED]->(m)
+					 WHERE other <> u AND r2.rating >= 4.0 AND coalesce(r2.not_interested, false) = false
+					 WITH u, other, count(DISTINCT m) AS overlap
+					 WHERE overlap >= 1
+					 MATCH (other)-[r3:RATED]->(rec:Movie)
+					 WHERE r3.rating >= 4.0 AND coalesce(r3.not_interested, false) = false
+					   AND NOT exists((u)-[:WATCHED]->(rec))
+					   AND NOT exists((u)-[:RATED]->(rec))
+					 WITH rec.movie_id AS m_id, count(DISTINCT other) AS sim_users, avg(r3.rating) AS avg_sim_rating
+					 RETURN m_id, sim_users, avg_sim_rating
+					 ORDER BY sim_users DESC, avg_sim_rating DESC LIMIT 20`
+
+	recs, err := m.fetchGraphSubset(ctx, param, recQuery, "AS (rec_id agtype, sim_users agtype, avg_sim_rating agtype)")
 	if err != nil {
 		return nil, err
 	}
 
-	if len(recs) > 0 {
-		return recs, nil
-	}
-
-	// Fallback to globally popular unseen movies via graph traversal
-	fallbackQuery := `MATCH (u:User {user_id: $uid})
-					  MATCH (m:Movie)
-					  WHERE NOT exists((u)-[:WATCHED]->(m))
-						AND NOT exists((u)-[:RATED]->(m))
-					  WITH m.movie_id AS m_id, m.vote_avg AS vote
-					  RETURN m_id, vote ORDER BY vote DESC LIMIT 20`
-	return m.fetchGraphSubset(ctx, param, fallbackQuery, "AS (rec_id agtype, vote agtype)")
+	return recs, nil
 }

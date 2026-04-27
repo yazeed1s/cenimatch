@@ -240,10 +240,10 @@ export const realApi = {
         method: "POST",
         body: JSON.stringify({ movie_id: movieId, rating }),
       });
+      return { success: true };
     } catch {
-      // keep ui usable until feedback endpoints are added
+      return { success: false };
     }
-    return { success: true };
   },
 
   markNotInterested: async (movieId: number): Promise<{ success: boolean }> => {
@@ -252,10 +252,18 @@ export const realApi = {
         method: "POST",
         body: JSON.stringify({ movie_id: movieId }),
       });
+      return { success: true };
     } catch {
-      // keep ui usable until feedback endpoints are added
+      return { success: false };
     }
-    return { success: true };
+  },
+
+  getUserFeedback: async (movieId: number): Promise<{ rating: number | null; not_interested: boolean } | null> => {
+    try {
+      return await fetchJSON<{ movie_id: number; rating: number | null; not_interested: boolean }>(`/api/feedback/${movieId}`);
+    } catch {
+      return null;
+    }
   },
 
 
