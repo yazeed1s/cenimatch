@@ -62,6 +62,7 @@ func NewServer(
 
 		api.Get("/movies", movieHandler.ListMovies())
 		api.Get("/movies/search", movieHandler.SearchMovies())
+		api.Get("/movies/trending/week", movieHandler.GetTrendingMoviesThisWeek())
 		api.Get("/movies/{id}", movieHandler.GetMovieByID())
 		api.Get("/movies/{id}/crew", movieHandler.GetMovieCrew())
 		api.Get("/movies/{id}/related", movieHandler.GetRelatedMovies())

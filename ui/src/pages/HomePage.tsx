@@ -11,14 +11,21 @@ interface HomePageProps {
 
 export default function HomePage({ user }: HomePageProps) {
   const [catalog, setCatalog] = useState<Movie[]>([]);
+  const [trending, setTrending] = useState<Movie[]>([]);
   const [graphRecs, setGraphRecs] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+  const [trendingLoading, setTrendingLoading] = useState(true);
   const navigate = useNavigate();
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    let catalogPromise = api.listMovies(50).then(movies => setCatalog(movies)).catch(() => setCatalog([]));
+    setTrendingLoading(true);
+    const catalogPromise = api.listMovies(50).then(movies => setCatalog(movies)).catch(() => setCatalog([]));
+    api.getTrendingThisWeek(50)
+      .then((movies) => setTrending(movies))
+      .catch(() => setTrending([]))
+      .finally(() => setTrendingLoading(false));
 
     // Only fetch graph recommendations if a user exists
     if (user) {
@@ -46,7 +53,6 @@ export default function HomePage({ user }: HomePageProps) {
     );
   }, []);
 
-const trending = useMemo(() => catalog, [catalog]);
 const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating), [catalog]);
   const recs = useMemo(() => catalog.slice(0, 20), [catalog]);
 
@@ -141,11 +147,21 @@ const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating),
               View all <ChevronRight />
             </button>
           </div>
-          <div className="movie-scroller">   {/* was movie-scroller */}
-            {trending.map((m) => (
-              <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
-            ))}
-          </div>
+          {trendingLoading ? (
+            <div className="loading-center">
+              <div className="spinner" />
+            </div>
+          ) : trending.length > 0 ? (
+            <div className="movie-scroller">   {/* was movie-scroller */}
+              {trending.map((m) => (
+                <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: "var(--text3)" }}>
+              No movie ratings submitted this week yet.
+            </div>
+          )}
         </div>
 
         {/* ── Top Rated ── */}

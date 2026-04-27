@@ -178,6 +178,128 @@ func (m *MovieRepo) ListMovies(
 	return movies, nil
 }
 
+func (m *MovieRepo) GetTrendingMoviesThisWeek(
+	ctx context.Context,
+	limit int,
+) ([]domain.RawMovie, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+
+	sql := `
+			WITH trending_week AS (
+				SELECT uf.movie_id AS tmdb_id, count(*) AS rating_count
+				FROM user_feedback uf
+				WHERE
+					uf.created_at >= now() - interval '7 days' AND
+					uf.rating IS NOT NULL AND
+					coalesce(uf.not_interested, false) = false
+				GROUP BY uf.movie_id
+				ORDER BY rating_count DESC, uf.movie_id
+				LIMIT $1
+		)
+		SELECT
+			m.tmdb_id,
+			m.imdb_id,
+			m.title,
+			m.original_title,
+			to_char(m.release_date, 'YYYY-MM-DD') AS release_date,
+			m.release_year,
+			m.runtime_min,
+			m.original_lang,
+			m.overview,
+			m.popularity,
+			m.imdb_rating,
+			m.vote_avg,
+			m.vote_count,
+			m.budget,
+			m.revenue,
+			m.mpaa_rating,
+			m.poster_path,
+			m.enriched,
+			coalesce(g.names, '{}'::text[]) AS genres,
+			coalesce(t.tags, '{}'::text[]) AS mood_tags,
+			d.director_name,
+			coalesce(c.cast_names, '{}'::text[]) AS cast_names
+		FROM movies m
+		JOIN trending_week tw ON tw.tmdb_id = m.tmdb_id
+		LEFT JOIN LATERAL (
+			SELECT array_agg(g.name ORDER BY g.name) AS names
+			FROM movie_genres mg
+			JOIN genres g ON g.id = mg.genre_id
+			WHERE mg.movie_id = m.tmdb_id
+		) g ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT array_agg(mt.tag_value ORDER BY mt.tag_value) AS tags
+			FROM movie_tags mt
+			WHERE mt.movie_id = m.tmdb_id AND mt.tag_key = 'mood'
+		) t ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT p.primary_name AS director_name
+			FROM movie_crew mc
+			JOIN persons p ON p.imdb_id = mc.person_id
+			WHERE mc.movie_id = m.tmdb_id AND mc.role = 'director'
+			ORDER BY mc.ordering NULLS LAST
+			LIMIT 1
+		) d ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT array_agg(name ORDER BY ord) AS cast_names
+			FROM (
+				SELECT p.primary_name AS name, mc.ordering AS ord
+				FROM movie_crew mc
+				JOIN persons p ON p.imdb_id = mc.person_id
+				WHERE mc.movie_id = m.tmdb_id AND mc.role = 'actor'
+				ORDER BY mc.ordering NULLS LAST
+				LIMIT 8
+			) cast_members
+		) c ON TRUE
+		ORDER BY tw.rating_count DESC, coalesce(m.popularity, 0) DESC, coalesce(m.vote_count, 0) DESC`
+
+	rows, err := m.db.Query(ctx, sql, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	movies := make([]domain.RawMovie, 0)
+	for rows.Next() {
+		var movie domain.RawMovie
+		if err := rows.Scan(
+			&movie.TMDBID,
+			&movie.IMDBID,
+			&movie.Title,
+			&movie.OriginalTitle,
+			&movie.ReleaseDate,
+			&movie.ReleaseYear,
+			&movie.RuntimeMin,
+			&movie.OriginalLang,
+			&movie.Overview,
+			&movie.Popularity,
+			&movie.IMDBRating,
+			&movie.VoteAvg,
+			&movie.VoteCount,
+			&movie.Budget,
+			&movie.Revenue,
+			&movie.MPAARating,
+			&movie.PosterPath,
+			&movie.Enriched,
+			&movie.Genres,
+			&movie.MoodTags,
+			&movie.DirectorName,
+			&movie.CastNames,
+		); err != nil {
+			return nil, err
+		}
+		movies = append(movies, movie)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return movies, nil
+}
+
 func (m *MovieRepo) GetMovieByID(ctx context.Context, id int64) (*domain.RawMovie, error) {
 	sql := `
 		SELECT

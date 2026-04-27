@@ -54,6 +54,20 @@ func (h *MovieHandler) SearchMovies() http.HandlerFunc {
 	}
 }
 
+func (h *MovieHandler) GetTrendingMoviesThisWeek() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limit := intQuery(r, "limit", 30, 200)
+
+		movies, err := h.repo.GetTrendingMoviesThisWeek(r.Context(), limit)
+		if err != nil {
+			utils.InternalServerError(w, err.Error())
+			return
+		}
+
+		utils.Success(w, movies)
+	}
+}
+
 func (h *MovieHandler) GetMovieByID() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
