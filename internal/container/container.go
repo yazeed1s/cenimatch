@@ -44,6 +44,7 @@ func New(cfg *config.Config) (*Container, error) {
 	// services
 	authService := service.NewAuthService(userRepo, db, hasher, jwt, refreshGen)
 	onboardingService := service.NewOnboardingService(db)
+	feedbackService := service.NewFeedbackService(db)
 
 	llmClient := llm.NewClient(cfg.OpenRouterAPIKey)
 	chatService := service.NewChatService(llmClient, pool)
@@ -54,6 +55,7 @@ func New(cfg *config.Config) (*Container, error) {
 		jwt,
 		authService,
 		onboardingService,
+		feedbackService,
 		movieRepo,
 		chatService,
 	)

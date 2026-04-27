@@ -5,19 +5,33 @@ DOCKER_PSQL="docker exec -i -u root cenimatch-db psql -U u -d cenimatch-db -v ON
 
 EXECUTE=false
 TRUNCATE=false
+SYNC_GRAPH=true
 
 usage() {
-  echo "Usage: $0 [--execute] [--truncate-user-data]"
+  local code="${1:-1}"
+  echo "Usage: $0 [--execute] [--truncate-user-data] [--no-sync-graph]"
   echo "  --execute              run against DB (default prints SQL)"
   echo "  --truncate-user-data   clears users/watch_history/user_feedback first"
-  exit 1
+  echo "  --no-sync-graph        skip Apache AGE incremental sync after execute"
+  exit "$code"
 }
 
-for arg in "$@"; do
+while [[ $# -gt 0 ]]; do
+  arg="$1"
   case "$arg" in
-    --execute) EXECUTE=true ;;
-    --truncate-user-data) TRUNCATE=true ;;
-    -h|--help) usage ;;
+    --execute)
+      EXECUTE=true
+      shift
+      ;;
+    --truncate-user-data)
+      TRUNCATE=true
+      shift
+      ;;
+    --no-sync-graph)
+      SYNC_GRAPH=false
+      shift
+      ;;
+    -h|--help) usage 0 ;;
     *) echo "Unknown arg: $arg"; usage ;;
   esac
 done
@@ -25,6 +39,26 @@ done
 SQL_BODY=$(cat <<SQL
 BEGIN;
 $(if [ "$TRUNCATE" = true ]; then echo "TRUNCATE watch_history, user_feedback, users CASCADE;"; fi)
+
+CREATE TEMP TABLE faker_new_users (
+  user_id UUID,
+  username TEXT
+) ON COMMIT DROP;
+
+CREATE TEMP TABLE faker_watched (
+  user_id UUID,
+  movie_id INT,
+  watched_at TIMESTAMPTZ,
+  completed BOOLEAN
+) ON COMMIT DROP;
+
+CREATE TEMP TABLE faker_rated (
+  user_id UUID,
+  movie_id INT,
+  rating FLOAT,
+  not_interested BOOLEAN,
+  created_at TIMESTAMPTZ
+) ON COMMIT DROP;
 
 WITH clusters AS (
   VALUES
@@ -43,6 +77,21 @@ new_users AS (
   FROM clusters c
   CROSS JOIN generate_series(1, 8) AS i
   RETURNING id, username, split_part(username, '_', 2) AS cluster
+)
+INSERT INTO faker_new_users (user_id, username)
+SELECT id, username
+FROM new_users;
+
+WITH clusters AS (
+  VALUES
+    ('action_sci', ARRAY['Action','Science Fiction']::text[]),
+    ('drama_romance', ARRAY['Drama','Romance']::text[]),
+    ('comedy_family', ARRAY['Comedy','Family']::text[]),
+    ('mixed', ARRAY['Action','Drama','Comedy','Adventure']::text[])
+),
+new_users AS (
+  SELECT user_id AS id, username, split_part(username, '_', 2) AS cluster
+  FROM faker_new_users
 ),
 cluster_movies AS (
   SELECT c.column1 AS cluster,
@@ -67,13 +116,17 @@ watched AS (
     ORDER BY random()
     LIMIT 15
   ) pick ON true
-  RETURNING id, user_id, movie_id
-),
-rated AS (
+  RETURNING user_id, movie_id, watched_at, completed
+)
+INSERT INTO faker_watched (user_id, movie_id, watched_at, completed)
+SELECT user_id, movie_id, watched_at, completed
+FROM watched;
+
+WITH rated AS (
   INSERT INTO user_feedback (user_id, movie_id, rating, not_interested, created_at)
   SELECT w.user_id,
          w.movie_id,
-         CASE nu.cluster
+         CASE split_part(u.username, '_', 2)
            WHEN 'action_sci' THEN 3.5 + random() * 1.5
            WHEN 'drama_romance' THEN 3.4 + random() * 1.6
            WHEN 'comedy_family' THEN 3.0 + random() * 1.8
@@ -81,19 +134,113 @@ rated AS (
          END,
          random() < 0.05,
          now() - (random() * 60 || ' days')::interval
-  FROM watched w
-  JOIN new_users nu ON nu.id = w.user_id
+  FROM faker_watched w
+  JOIN users u ON u.id = w.user_id
   WHERE random() < 0.7
   ON CONFLICT (user_id, movie_id) DO UPDATE
     SET rating = EXCLUDED.rating,
         not_interested = EXCLUDED.not_interested,
         created_at = EXCLUDED.created_at
-  RETURNING id
+  RETURNING user_id, movie_id, rating, not_interested, created_at
 )
+INSERT INTO faker_rated (user_id, movie_id, rating, not_interested, created_at)
+SELECT user_id, movie_id, rating, not_interested, created_at
+FROM rated;
+
+$(if [ "$SYNC_GRAPH" = true ]; then cat <<'EOSQL'
+CREATE EXTENSION IF NOT EXISTS age;
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+DO $$
+DECLARE
+  params agtype;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'movie_graph') THEN
+    RAISE NOTICE 'movie_graph was not found, skipping graph sync';
+    RETURN;
+  END IF;
+
+  SELECT json_build_object('rows', COALESCE(json_agg(row_to_json(t)), '[]'::json))::text::agtype
+    INTO params
+  FROM (
+    SELECT user_id::text AS user_id, username
+    FROM faker_new_users
+  ) t;
+
+  PERFORM *
+  FROM ag_catalog.cypher(
+    'movie_graph'::name,
+    $cypher$
+      UNWIND $rows AS row
+      MERGE (u:User {user_id: row.user_id})
+      SET u.username = row.username
+      RETURN count(*)
+    $cypher$,
+    params
+  ) AS (v agtype);
+
+  SELECT json_build_object('rows', COALESCE(json_agg(row_to_json(t)), '[]'::json))::text::agtype
+    INTO params
+  FROM (
+    SELECT
+      user_id::text AS user_id,
+      movie_id,
+      to_char(watched_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS watched_at,
+      completed
+    FROM faker_watched
+  ) t;
+
+  PERFORM *
+  FROM ag_catalog.cypher(
+    'movie_graph'::name,
+    $cypher$
+      UNWIND $rows AS row
+      MATCH (u:User {user_id: row.user_id})
+      MATCH (m:Movie {movie_id: row.movie_id})
+      MERGE (u)-[w:WATCHED]->(m)
+      SET w.watched_at = row.watched_at, w.completed = row.completed
+      RETURN count(*)
+    $cypher$,
+    params
+  ) AS (v agtype);
+
+  SELECT json_build_object('rows', COALESCE(json_agg(row_to_json(t)), '[]'::json))::text::agtype
+    INTO params
+  FROM (
+    SELECT
+      user_id::text AS user_id,
+      movie_id,
+      rating,
+      coalesce(not_interested, false) AS not_interested,
+      to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+    FROM faker_rated
+  ) t;
+
+  PERFORM *
+  FROM ag_catalog.cypher(
+    'movie_graph'::name,
+    $cypher$
+      UNWIND $rows AS row
+      MATCH (u:User {user_id: row.user_id})
+      MATCH (m:Movie {movie_id: row.movie_id})
+      MERGE (u)-[r:RATED]->(m)
+      SET r.rating = row.rating,
+          r.not_interested = row.not_interested,
+          r.created_at = row.created_at
+      RETURN count(*)
+    $cypher$,
+    params
+  ) AS (v agtype);
+END
+$$;
+EOSQL
+fi)
+
 SELECT
-  (SELECT count(*) FROM new_users) AS users_created,
-  (SELECT count(*) FROM watched) AS watches_created,
-  (SELECT count(*) FROM rated) AS ratings_created;
+  (SELECT count(*) FROM faker_new_users) AS users_created,
+  (SELECT count(*) FROM faker_watched) AS watches_created,
+  (SELECT count(*) FROM faker_rated) AS ratings_created;
 COMMIT;
 SQL
 )
