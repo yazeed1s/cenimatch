@@ -83,20 +83,6 @@ const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating),
               
             </div>
                       </div>
-          <div className="hero-stats fade-in fade-in-delay-2">
-            <div>
-              <div className="hero-stat-num">100K+</div>
-              <div className="hero-stat-label">Films indexed</div>
-            </div>
-            <div>
-              <div className="hero-stat-num">4</div>
-              <div className="hero-stat-label">Data sources</div>
-            </div>
-            <div>
-              <div className="hero-stat-num">AI</div>
-              <div className="hero-stat-label">Powered ranking</div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -112,7 +98,7 @@ const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating),
                 {mood ? `${mood} Picks for You` : "Recommended for You"}
               </div>
               <div style={{ fontSize: 13, color: "var(--text3)", marginTop: 4 }}>
-                Ranked by XGBoost · personalised to your profile
+                Personalised to your profile
                 {mood && ` · filtered by mood: ${mood}`}
               </div>
             </div>

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type MovieRepo struct {
@@ -44,6 +44,7 @@ func (m *MovieRepo) ListMovies(
 			m.original_lang,
 			m.overview,
 			m.popularity,
+			m.imdb_rating,
 			m.vote_avg,
 			m.vote_count,
 			m.budget,
@@ -151,6 +152,7 @@ func (m *MovieRepo) ListMovies(
 			&movie.OriginalLang,
 			&movie.Overview,
 			&movie.Popularity,
+			&movie.IMDBRating,
 			&movie.VoteAvg,
 			&movie.VoteCount,
 			&movie.Budget,
@@ -189,6 +191,7 @@ func (m *MovieRepo) GetMovieByID(ctx context.Context, id int64) (*domain.RawMovi
 			m.original_lang,
 			m.overview,
 			m.popularity,
+			m.imdb_rating,
 			m.vote_avg,
 			m.vote_count,
 			m.budget,
@@ -224,6 +227,7 @@ func (m *MovieRepo) GetMovieByID(ctx context.Context, id int64) (*domain.RawMovi
 		&movie.OriginalLang,
 		&movie.Overview,
 		&movie.Popularity,
+		&movie.IMDBRating,
 		&movie.VoteAvg,
 		&movie.VoteCount,
 		&movie.Budget,
@@ -255,6 +259,7 @@ func (m *MovieRepo) GetMovieCrewByID(ctx context.Context, id int64) (*domain.Mov
 
 	sql := `
 		SELECT
+			p.imdb_id,
 			p.primary_name,
 			mc.role::text,
 			nullif(mc.character, ''),
@@ -282,6 +287,7 @@ func (m *MovieRepo) GetMovieCrewByID(ctx context.Context, id int64) (*domain.Mov
 	for rows.Next() {
 		var member domain.MovieCrewMember
 		if err := rows.Scan(
+			&member.PersonID,
 			&member.Name,
 			&member.Role,
 			&member.Job,
@@ -327,6 +333,7 @@ func (m *MovieRepo) GetRelatedMovies(
 			m.original_lang,
 			m.overview,
 			m.popularity,
+			m.imdb_rating,
 			m.vote_avg,
 			m.vote_count,
 			m.budget,
@@ -399,6 +406,7 @@ func (m *MovieRepo) GetRelatedMovies(
 			&movie.OriginalLang,
 			&movie.Overview,
 			&movie.Popularity,
+			&movie.IMDBRating,
 			&movie.VoteAvg,
 			&movie.VoteCount,
 			&movie.Budget,
@@ -442,6 +450,7 @@ func (m *MovieRepo) fetchGraphSubset(ctx context.Context, paramJSON string, cyph
 			m.original_lang,
 			m.overview,
 			m.popularity,
+			m.imdb_rating,
 			m.vote_avg,
 			m.vote_count,
 			m.budget,
@@ -500,6 +509,7 @@ func (m *MovieRepo) fetchGraphSubset(ctx context.Context, paramJSON string, cyph
 			&movie.TMDBID, &movie.IMDBID, &movie.Title, &movie.OriginalTitle,
 			&movie.ReleaseDate, &movie.ReleaseYear, &movie.RuntimeMin,
 			&movie.OriginalLang, &movie.Overview, &movie.Popularity,
+			&movie.IMDBRating,
 			&movie.VoteAvg, &movie.VoteCount, &movie.Budget, &movie.Revenue,
 			&movie.MPAARating, &movie.PosterPath, &movie.Enriched,
 			&movie.Genres, &movie.MoodTags, &movie.DirectorName, &movie.CastNames,
@@ -518,7 +528,7 @@ func (m *MovieRepo) fetchGraphSubset(ctx context.Context, paramJSON string, cyph
 
 func (m *MovieRepo) GetGraphRelatedMoviesData(ctx context.Context, id int64) (*domain.GraphRelatedMovies, error) {
 	result := &domain.GraphRelatedMovies{}
-	
+
 	dirQuery := `MATCH (m:Movie {movie_id: $id})<-[:DIRECTED]-(p:Person)-[:DIRECTED]->(rec:Movie)
 				 WHERE rec <> m
 				 RETURN DISTINCT rec.movie_id LIMIT 8`

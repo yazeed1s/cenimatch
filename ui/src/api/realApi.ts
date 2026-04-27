@@ -77,6 +77,7 @@ export interface RegisterPayload {
 }
 
 export interface MovieCrewMember {
+  person_id: string | null;
   name: string;
   role: string;
   job: string | null;
