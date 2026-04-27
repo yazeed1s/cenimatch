@@ -136,6 +136,11 @@ export const realApi = {
     return mapMovies(raw);
   },
 
+  getTopRatedAllTime: async (limit = 50): Promise<Movie[]> => {
+    const raw = await fetchJSON<RawMovie[]>(`/api/movies/top-rated/all-time?limit=${limit}`);
+    return mapMovies(raw);
+  },
+
   getRecommendations: async (_userId: string | undefined, mood: string | null): Promise<Movie[]> => {
     const raws = await fetchJSON<RawMovie[]>("/api/movies?limit=50");
     const movies = mapMovies(raws);

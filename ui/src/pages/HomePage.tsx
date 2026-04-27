@@ -12,20 +12,27 @@ interface HomePageProps {
 export default function HomePage({ user }: HomePageProps) {
   const [catalog, setCatalog] = useState<Movie[]>([]);
   const [trending, setTrending] = useState<Movie[]>([]);
+  const [topRated, setTopRated] = useState<Movie[]>([]);
   const [graphRecs, setGraphRecs] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const [trendingLoading, setTrendingLoading] = useState(true);
+  const [topRatedLoading, setTopRatedLoading] = useState(true);
   const navigate = useNavigate();
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setTrendingLoading(true);
+    setTopRatedLoading(true);
     const catalogPromise = api.listMovies(50).then(movies => setCatalog(movies)).catch(() => setCatalog([]));
     api.getTrendingThisWeek(50)
       .then((movies) => setTrending(movies))
       .catch(() => setTrending([]))
       .finally(() => setTrendingLoading(false));
+    api.getTopRatedAllTime(50)
+      .then((movies) => setTopRated(movies))
+      .catch(() => setTopRated([]))
+      .finally(() => setTopRatedLoading(false));
 
     // Only fetch graph recommendations if a user exists
     if (user) {
@@ -53,7 +60,6 @@ export default function HomePage({ user }: HomePageProps) {
     );
   }, []);
 
-const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating), [catalog]);
   const recs = useMemo(() => catalog.slice(0, 20), [catalog]);
 
   return (
@@ -172,11 +178,21 @@ const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating),
               View all <ChevronRight />
             </button>
           </div>
-          <div className="movie-scroller">   {/* was movie-scroller */}
-            {topRated.map((m) => (
-              <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
-            ))}
-          </div>
+          {topRatedLoading ? (
+            <div className="loading-center">
+              <div className="spinner" />
+            </div>
+          ) : topRated.length > 0 ? (
+            <div className="movie-scroller">
+              {topRated.map((m) => (
+                <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: "var(--text3)" }}>
+              No top-rated movies available yet.
+            </div>
+          )}
         </div>
       </div>
     </div>
