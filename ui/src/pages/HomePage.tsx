@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import MovieCard from "../components/MovieCard";
-import MoodSelector from "../components/MoodSelector";
 import { realApi as api } from "../api/realApi";
 import type { Movie, User } from "../types/movie";
 
@@ -11,7 +10,6 @@ interface HomePageProps {
 }
 
 export default function HomePage({ user }: HomePageProps) {
-  const [mood, setMood] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<Movie[]>([]);
   const [graphRecs, setGraphRecs] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,14 +48,7 @@ export default function HomePage({ user }: HomePageProps) {
 
 const trending = useMemo(() => catalog, [catalog]);
 const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating), [catalog]);
-  const recs = useMemo(() => {
-    if (!mood) return catalog.slice(0, 20);
-    const moodKey = mood.toLowerCase().replace(/[\s-]/g, "_");
-    const filtered = catalog.filter((movie) =>
-      movie.mood.some((value) => value.toLowerCase().replace(/[\s-]/g, "_") === moodKey),
-    );
-    return (filtered.length ? filtered : catalog).slice(0, 20);
-  }, [catalog, mood]);
+  const recs = useMemo(() => catalog.slice(0, 20), [catalog]);
 
   return (
     <div>
@@ -86,27 +77,16 @@ const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating),
         </div>
       </section>
 
-      {/* ── Mood bar ── */}
-      <MoodSelector activeMood={mood} onChange={setMood} />
-
       <div className="container">
         {/* ── Recommendations ── */}
         <div className="section">
           <div className="row-header fade-in">
             <div>
-              <div className="row-title">
-                {mood ? `${mood} Picks for You` : "Recommended for You"}
-              </div>
+              <div className="row-title">Recommended for You</div>
               <div style={{ fontSize: 13, color: "var(--text3)", marginTop: 4 }}>
                 Personalised to your profile
-                {mood && ` · filtered by mood: ${mood}`}
               </div>
             </div>
-            {mood && (
-              <button className="btn btn-ghost btn-sm" onClick={() => setMood(null)}>
-                <XIcon /> Clear mood
-              </button>
-            )}
           </div>
 
           {loading ? (
@@ -200,13 +180,6 @@ function ChevronRight() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <polyline points="9 18 15 12 9 6" />
-    </svg>
-  );
-}
-function XIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
     </svg>
   );
 }
