@@ -110,7 +110,7 @@ func (m *MovieRepo) ListMovies(
 				lower(m.poster_path) <> 'none' AND
 				coalesce(m.vote_count, 0) >= 20
 				%s
-			ORDER BY m.tmdb_id DESC
+			ORDER BY coalesce(m.popularity, 0) DESC, coalesce(m.vote_count, 0) DESC
 			LIMIT $%d OFFSET $%d
 		)`, genreFilter, argCount, argCount+1)
 		args = append(args, limit, offset)
