@@ -11,6 +11,7 @@ type RawMovie struct {
 	OriginalLang        *string  `json:"original_lang"`
 	Overview            *string  `json:"overview"`
 	Popularity          *float64 `json:"popularity"`
+	IMDBRating          *float64 `json:"imdb_rating"`
 	VoteAvg             *float64 `json:"vote_avg"`
 	VoteCount           *int     `json:"vote_count"`
 	Budget              *int64   `json:"budget"`
@@ -27,6 +28,7 @@ type RawMovie struct {
 }
 
 type MovieCrewMember struct {
+	PersonID  *string `json:"person_id,omitempty"`
 	Name      string  `json:"name"`
 	Role      string  `json:"role"`
 	Job       *string `json:"job"`

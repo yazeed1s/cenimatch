@@ -15,6 +15,7 @@ export interface RawMovie {
   original_lang: string | null;      
   overview: string | null;
   popularity: number | null;
+  imdb_rating: number | null;
   vote_avg: number | null;          
   vote_count: number | null;
   budget: number | null;
@@ -96,7 +97,7 @@ export function mapMovie(raw: RawMovie): Movie {
     title: raw.title,
     year,
     genre: raw.genres ?? [],
-    rating: raw.vote_avg ?? 0,
+    rating: raw.imdb_rating ?? raw.vote_avg ?? 0,
     runtime: raw.runtime_min ?? 0,
     language: cleanNullableText(raw.original_lang) ?? "Unknown",
     director: cleanNullableText(raw.director_name) ?? "Unknown",

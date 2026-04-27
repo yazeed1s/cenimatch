@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import MovieCard from "../components/MovieCard";
-import MoodSelector from "../components/MoodSelector";
 import { realApi as api } from "../api/realApi";
 import type { Movie, User } from "../types/movie";
 
@@ -11,16 +10,29 @@ interface HomePageProps {
 }
 
 export default function HomePage({ user }: HomePageProps) {
-  const [mood, setMood] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<Movie[]>([]);
+  const [trending, setTrending] = useState<Movie[]>([]);
+  const [topRated, setTopRated] = useState<Movie[]>([]);
   const [graphRecs, setGraphRecs] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+  const [trendingLoading, setTrendingLoading] = useState(true);
+  const [topRatedLoading, setTopRatedLoading] = useState(true);
   const navigate = useNavigate();
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    let catalogPromise = api.listMovies(50).then(movies => setCatalog(movies)).catch(() => setCatalog([]));
+    setTrendingLoading(true);
+    setTopRatedLoading(true);
+    const catalogPromise = api.listMovies(50).then(movies => setCatalog(movies)).catch(() => setCatalog([]));
+    api.getTrendingThisWeek(50)
+      .then((movies) => setTrending(movies))
+      .catch(() => setTrending([]))
+      .finally(() => setTrendingLoading(false));
+    api.getTopRatedAllTime(50)
+      .then((movies) => setTopRated(movies))
+      .catch(() => setTopRated([]))
+      .finally(() => setTopRatedLoading(false));
 
     // Only fetch graph recommendations if a user exists
     if (user) {
@@ -48,16 +60,7 @@ export default function HomePage({ user }: HomePageProps) {
     );
   }, []);
 
-const trending = useMemo(() => catalog, [catalog]);
-const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating), [catalog]);
-  const recs = useMemo(() => {
-    if (!mood) return catalog.slice(0, 20);
-    const moodKey = mood.toLowerCase().replace(/[\s-]/g, "_");
-    const filtered = catalog.filter((movie) =>
-      movie.mood.some((value) => value.toLowerCase().replace(/[\s-]/g, "_") === moodKey),
-    );
-    return (filtered.length ? filtered : catalog).slice(0, 20);
-  }, [catalog, mood]);
+  const recs = useMemo(() => catalog.slice(0, 20), [catalog]);
 
   return (
     <div>
@@ -83,44 +86,19 @@ const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating),
               
             </div>
                       </div>
-          <div className="hero-stats fade-in fade-in-delay-2">
-            <div>
-              <div className="hero-stat-num">100K+</div>
-              <div className="hero-stat-label">Films indexed</div>
-            </div>
-            <div>
-              <div className="hero-stat-num">4</div>
-              <div className="hero-stat-label">Data sources</div>
-            </div>
-            <div>
-              <div className="hero-stat-num">AI</div>
-              <div className="hero-stat-label">Powered ranking</div>
-            </div>
-          </div>
         </div>
       </section>
-
-      {/* ── Mood bar ── */}
-      <MoodSelector activeMood={mood} onChange={setMood} />
 
       <div className="container">
         {/* ── Recommendations ── */}
         <div className="section">
           <div className="row-header fade-in">
             <div>
-              <div className="row-title">
-                {mood ? `${mood} Picks for You` : "Recommended for You"}
-              </div>
+              <div className="row-title">Recommended for You</div>
               <div style={{ fontSize: 13, color: "var(--text3)", marginTop: 4 }}>
-                Ranked by XGBoost · personalised to your profile
-                {mood && ` · filtered by mood: ${mood}`}
+                Personalised to your profile
               </div>
             </div>
-            {mood && (
-              <button className="btn btn-ghost btn-sm" onClick={() => setMood(null)}>
-                <XIcon /> Clear mood
-              </button>
-            )}
           </div>
 
           {loading ? (
@@ -175,11 +153,21 @@ const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating),
               View all <ChevronRight />
             </button>
           </div>
-          <div className="movie-scroller">   {/* was movie-scroller */}
-            {trending.map((m) => (
-              <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
-            ))}
-          </div>
+          {trendingLoading ? (
+            <div className="loading-center">
+              <div className="spinner" />
+            </div>
+          ) : trending.length > 0 ? (
+            <div className="movie-scroller">   {/* was movie-scroller */}
+              {trending.map((m) => (
+                <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: "var(--text3)" }}>
+              No movie ratings submitted this week yet.
+            </div>
+          )}
         </div>
 
         {/* ── Top Rated ── */}
@@ -190,11 +178,21 @@ const topRated = useMemo(() => [...catalog].sort((a, b) => b.rating - a.rating),
               View all <ChevronRight />
             </button>
           </div>
-          <div className="movie-scroller">   {/* was movie-scroller */}
-            {topRated.map((m) => (
-              <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
-            ))}
-          </div>
+          {topRatedLoading ? (
+            <div className="loading-center">
+              <div className="spinner" />
+            </div>
+          ) : topRated.length > 0 ? (
+            <div className="movie-scroller">
+              {topRated.map((m) => (
+                <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: "var(--text3)" }}>
+              No top-rated movies available yet.
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -214,13 +212,6 @@ function ChevronRight() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <polyline points="9 18 15 12 9 6" />
-    </svg>
-  );
-}
-function XIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
     </svg>
   );
 }

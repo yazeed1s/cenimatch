@@ -77,6 +77,7 @@ export interface RegisterPayload {
 }
 
 export interface MovieCrewMember {
+  person_id: string | null;
   name: string;
   role: string;
   job: string | null;
@@ -127,6 +128,16 @@ export const realApi = {
     // Determine route based on search vs list
     const path = query ? `/api/movies/search?${params.toString()}` : `/api/movies?${params.toString()}`;
     const raw = await fetchJSON<RawMovie[]>(path);
+    return mapMovies(raw);
+  },
+
+  getTrendingThisWeek: async (limit = 50): Promise<Movie[]> => {
+    const raw = await fetchJSON<RawMovie[]>(`/api/movies/trending/week?limit=${limit}`);
+    return mapMovies(raw);
+  },
+
+  getTopRatedAllTime: async (limit = 50): Promise<Movie[]> => {
+    const raw = await fetchJSON<RawMovie[]>(`/api/movies/top-rated/all-time?limit=${limit}`);
     return mapMovies(raw);
   },
 
