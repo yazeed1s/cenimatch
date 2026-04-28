@@ -1,10 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import MovieCard from "../components/MovieCard";
 import { realApi as api } from "../api/realApi";
 import type { MovieCrewMember } from "../api/realApi";
 import { MOODS } from "../types/movie";
 import type { Movie, GraphRelatedMovies } from "../types/movie";
+
+interface IMDbNameResponse {
+  primaryImage?: {
+    url?: string;
+  } | null;
+}
+
+const IMDB_NAME_IMAGE_CACHE = new Map<string, string | null>();
+let imdbApiCooldownUntil = 0;
 
 export default function MoviePage() {
   const { id } = useParams<{ id: string }>();
@@ -16,8 +25,10 @@ export default function MoviePage() {
   const [loading, setLoading] = useState(true);
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [rating, setRating] = useState(0);
-  const [liked, setLiked] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
+  const [crewPhotos, setCrewPhotos] = useState<Record<string, string>>({});
+  const [failedCrewPhotos, setFailedCrewPhotos] = useState<Record<string, true>>({});
+  const requestedPhotoIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!id) return;
@@ -25,9 +36,11 @@ export default function MoviePage() {
     setLoading(true);
     setRelatedLoading(true);
     setRating(0);
-    setLiked(false);
     setCrew([]);
     setGraphRelated(null);
+    setCrewPhotos({});
+    setFailedCrewPhotos({});
+    requestedPhotoIds.current = new Set();
 
     api.getMovieById(Number(id))
       .then((mv) => { if (cancelled) return; setMovie(mv); })
@@ -41,13 +54,110 @@ export default function MoviePage() {
       .then((rel) => { if (cancelled) return; setGraphRelated(rel); })
       .finally(() => { if (!cancelled) setRelatedLoading(false); });
 
+    api.getUserFeedback(Number(id))
+      .then((fb) => {
+        if (cancelled || !fb) return;
+        if (fb.not_interested || fb.rating === null) {
+          setRating(0);
+          return;
+        }
+        setRating(Math.max(0, Math.min(5, Math.round(fb.rating))));
+      });
+
     return () => { cancelled = true; };
   }, [id]);
 
+  useEffect(() => {
+    const cachedPhotos: Record<string, string> = {};
+    const idsToFetch: string[] = [];
+
+    crew
+      .map((member) => member.person_id)
+      .forEach((personId) => {
+        if (!personId) return;
+        if (requestedPhotoIds.current.has(personId)) return;
+        requestedPhotoIds.current.add(personId);
+
+        if (IMDB_NAME_IMAGE_CACHE.has(personId)) {
+          const cached = IMDB_NAME_IMAGE_CACHE.get(personId);
+          if (cached) cachedPhotos[personId] = cached;
+          return;
+        }
+        idsToFetch.push(personId);
+      });
+
+    if (Object.keys(cachedPhotos).length > 0) {
+      setCrewPhotos((prev) => ({ ...prev, ...cachedPhotos }));
+    }
+    if (idsToFetch.length === 0) return;
+    if (Date.now() < imdbApiCooldownUntil) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const freshPhotos: Record<string, string> = {};
+      for (const personId of idsToFetch) {
+        if (cancelled) break;
+        if (Date.now() < imdbApiCooldownUntil) break;
+
+        try {
+          const res = await fetch(`https://api.imdbapi.dev/names/${encodeURIComponent(personId)}`, {
+            headers: { accept: "application/json" },
+          });
+
+          if (res.status === 429) {
+            imdbApiCooldownUntil = Date.now() + 10 * 60 * 1000;
+            IMDB_NAME_IMAGE_CACHE.set(personId, null);
+            break;
+          }
+
+          if (!res.ok) {
+            IMDB_NAME_IMAGE_CACHE.set(personId, null);
+            continue;
+          }
+
+          const raw = (await res.json()) as IMDbNameResponse;
+          const imageUrl = typeof raw.primaryImage?.url === "string" ? raw.primaryImage.url : null;
+          IMDB_NAME_IMAGE_CACHE.set(personId, imageUrl);
+          if (imageUrl) freshPhotos[personId] = imageUrl;
+        } catch {
+          IMDB_NAME_IMAGE_CACHE.set(personId, null);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      }
+
+      if (cancelled || Object.keys(freshPhotos).length === 0) return;
+      setCrewPhotos((prev) => ({ ...prev, ...freshPhotos }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [crew]);
+
   async function handleRate(val: number) {
+    if (!id) return;
+    const previous = rating;
     setRating(val);
-    await api.submitFeedback(Number(id), val);
-    showToast(`Rated ${val}/5 — your recommendations will improve!`, "success");
+    const res = await api.submitFeedback(Number(id), val);
+    if (res.success) {
+      showToast(`Rated ${val}/5 — similar-user recommendations will update.`, "success");
+      return;
+    }
+    setRating(previous);
+    showToast("Could not save rating. Please try again.", "error");
+  }
+
+  async function handleNotInterested() {
+    if (!id) return;
+    const res = await api.markNotInterested(Number(id));
+    if (res.success) {
+      setRating(0);
+      showToast("Excluded from similar-user recommendations.", "info");
+      return;
+    }
+    showToast("Could not update preference. Please try again.", "error");
   }
 
   function showToast(msg: string, type: string) {
@@ -83,6 +193,48 @@ export default function MoviePage() {
     } catch {
       return role;
     }
+  }
+
+  function getCrewAvatar(member: MovieCrewMember): string | null {
+    if (!member.person_id) return null;
+    if (failedCrewPhotos[member.person_id]) return null;
+    return crewPhotos[member.person_id] ?? null;
+  }
+
+  function getInitials(name: string): string {
+    const letters = name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("");
+    return letters || "?";
+  }
+
+  function renderCrewAvatar(member: MovieCrewMember) {
+    const avatarUrl = getCrewAvatar(member);
+    if (!avatarUrl) {
+      return (
+        <div className="cast-avatar" aria-label={`${member.name} initials`}>
+          {getInitials(member.name)}
+        </div>
+      );
+    }
+
+    return (
+      <img
+        src={avatarUrl}
+        alt={member.name}
+        className="cast-avatar"
+        onError={() => {
+          const personId = member.person_id;
+          if (!personId) return;
+          IMDB_NAME_IMAGE_CACHE.set(personId, null);
+          setFailedCrewPhotos((prev) => ({ ...prev, [personId]: true }));
+        }}
+      />
+    );
   }
 
   return (
@@ -137,14 +289,6 @@ export default function MoviePage() {
                   ))}
                 </div>
               )}
-              <div className="movie-actions">
-                <button className="btn btn-primary" onClick={() => { setLiked(!liked); showToast(liked ? "Removed from saved" : "Saved to your list!", "success"); }}>
-                  <BookmarkIcon filled={liked} /> {liked ? "Saved" : "Save Film"}
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => showToast("Got it — we'll recommend similar films.", "success")}>
-                  <ThumbsUpIcon /> Like this style
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -159,7 +303,7 @@ export default function MoviePage() {
           </div>
           <div>
             <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8, fontWeight: 600, letterSpacing: 1.5, textTransform: "uppercase" }}>Not interested?</div>
-            <button className="btn btn-ghost btn-sm" onClick={() => showToast("Got it — excluded from future recommendations.", "info")}>
+            <button className="btn btn-ghost btn-sm" onClick={handleNotInterested}>
               <XIcon /> Exclude from recs
             </button>
           </div>
@@ -174,7 +318,7 @@ export default function MoviePage() {
                 <div className="cast-grid">
                   {directorCrew.map((member, i) => (
                     <div key={`dir-${member.name}-${i}`} className="cast-card fade-in" style={{ borderLeft: "3px solid var(--accent)" }}>
-                      <img src={`https://api.dicebear.com/9.x/micah/svg?seed=${encodeURIComponent(member.name)}&backgroundColor=transparent`} alt="" className="cast-avatar" />
+                      {renderCrewAvatar(member)}
                       <div className="cast-info">
                         <div className="cast-name">{member.name}</div>
                         <div className="cast-role">{formatRoleString(member.job || member.role)}</div>
@@ -183,7 +327,7 @@ export default function MoviePage() {
                   ))}
                   {producerCrew.map((member, i) => (
                     <div key={`prod-${member.name}-${i}`} className="cast-card fade-in" style={{ borderLeft: "3px solid #a3e635" }}>
-                      <img src={`https://api.dicebear.com/9.x/micah/svg?seed=${encodeURIComponent(member.name)}&backgroundColor=transparent`} alt="" className="cast-avatar" />
+                      {renderCrewAvatar(member)}
                       <div className="cast-info">
                         <div className="cast-name">{member.name}</div>
                         <div className="cast-role">{formatRoleString(member.job || member.role)}</div>
@@ -200,7 +344,7 @@ export default function MoviePage() {
                 <div className="cast-grid">
                   {actorCrew.map((member, i) => (
                     <div key={`act-${member.name}-${i}`} className="cast-card fade-in">
-                      <img src={`https://api.dicebear.com/9.x/micah/svg?seed=${encodeURIComponent(member.name)}&backgroundColor=transparent`} alt="" className="cast-avatar" />
+                      {renderCrewAvatar(member)}
                       <div className="cast-info">
                         <div className="cast-name">{member.name}</div>
                         <div className="cast-role">{formatRoleString(member.character) || "Actor"}</div>
@@ -217,7 +361,7 @@ export default function MoviePage() {
                 <div className="cast-grid">
                   {otherCrew.map((member, i) => (
                     <div key={`oth-${member.name}-${i}`} className="cast-card fade-in">
-                      <img src={`https://api.dicebear.com/9.x/micah/svg?seed=${encodeURIComponent(member.name)}&backgroundColor=transparent`} alt="" className="cast-avatar" />
+                      {renderCrewAvatar(member)}
                       <div className="cast-info">
                         <div className="cast-name">{member.name}</div>
                         <div className="cast-role">{formatRoleString(member.job || member.role)}</div>
@@ -313,21 +457,6 @@ function StarIcon({ filled, size = 16 }: { filled?: boolean; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-    </svg>
-  );
-}
-function BookmarkIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
-      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-function ThumbsUpIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z" />
-      <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
     </svg>
   );
 }

@@ -105,6 +105,40 @@ to load the TMDB/IMDb seed data (expects files in `data/raw/` mounted into the d
 
 starts the api on whatever port is in your `.env`. hit `localhost:8080/health` to check.
 
+## Deployment (Docker + Cloudflared)
+
+`docker-compose.yml` remains DB-only. Deployment services live in `docker-compose.deploy.yml`.
+
+Set these env vars in `.env`:
+
+```bash
+# frontend build-time API base URL
+VITE_API_URL=https://dbproj-api.aramoudi.com
+
+# allowed browser origins for backend CORS (comma separated)
+CORS_ALLOWED_ORIGINS=https://cenimatch.aramoudi.com
+
+# Cloudflare tunnel token from Zero Trust
+CLOUDFLARED_TUNNEL_TOKEN=your_tunnel_token
+```
+
+Start DB stack first:
+
+```bash
+docker compose up -d
+```
+
+Then start deployment stack:
+
+```bash
+docker compose -f docker-compose.deploy.yml up -d
+```
+
+In Cloudflare Zero Trust, map hostnames:
+
+- `app.your-domain.com` -> `http://cenimatch-frontend:80`
+- `api.your-domain.com` -> `http://cenimatch-backend:8080`
+
 ## Common DB workflows
 
 ### Setup DB, Build Schema, and Seed Data
@@ -126,6 +160,16 @@ docker exec -i -u root cenimatch-db pg_dump -U u -d cenimatch-db > backup.sql
 # note it will remove current DB and create a new one
 docker compose down -v && docker compose up -d && sleep 3 && docker exec -i -u root cenimatch-db psql -U u -d cenimatch-db < backup.sql
 ```
+
+### Repair Apache AGE graph OID drift (after restore)
+
+If graph queries fail with an error like `graph with oid ... does not exist`, run:
+
+```bash
+bash migration/repair-age-oid.sh
+```
+
+Then restart the API process so pooled DB connections are refreshed.
 
 ### Build graph and run faker
 

@@ -23,15 +23,21 @@ type Server struct {
 
 func NewServer(
 	port int,
+	allowedOrigins []string,
 	jwt ports.JWTGenerator,
 	authService *service.AuthService,
 	onboardingService *service.OnboardingService,
+	feedbackService *service.FeedbackService,
 	movieRepo ports.MovieRepository,
 	chatService *service.ChatService,
 ) *Server {
 
 	r := chi.NewRouter()
 	cors := custommiddleware.DefaultCORSConfig()
+	if len(allowedOrigins) > 0 {
+		// Keep local dev origins and extend with configured public origins.
+		cors.AllowedOrigins = append(cors.AllowedOrigins, allowedOrigins...)
+	}
 	r.Use(custommiddleware.CORS(cors))
 
 	r.Use(middleware.Logger)
@@ -44,6 +50,7 @@ func NewServer(
 	movieHandler := handlers.NewMovieHandler(movieRepo)
 	authHandler := handlers.NewAuthHandler(authService)
 	onboardingHandler := handlers.NewOnboardingHandler(onboardingService)
+	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
 	chatHandler := handlers.NewChatHandler(chatService)
 
 	r.Route("/api", func(api chi.Router) {
@@ -55,6 +62,8 @@ func NewServer(
 
 		api.Get("/movies", movieHandler.ListMovies())
 		api.Get("/movies/search", movieHandler.SearchMovies())
+		api.Get("/movies/top-rated/all-time", movieHandler.GetTopRatedMoviesAllTime())
+		api.Get("/movies/trending/week", movieHandler.GetTrendingMoviesThisWeek())
 		api.Get("/movies/{id}", movieHandler.GetMovieByID())
 		api.Get("/movies/{id}/crew", movieHandler.GetMovieCrew())
 		api.Get("/movies/{id}/related", movieHandler.GetRelatedMovies())
@@ -65,6 +74,9 @@ func NewServer(
 		api.Group(func(protected chi.Router) {
 			protected.Use(custommiddleware.Auth(jwt))
 			protected.Post("/users/onboard", onboardingHandler.SaveOnboarding())
+			protected.Get("/feedback/{movieID}", feedbackHandler.GetFeedback())
+			protected.Post("/feedback", feedbackHandler.SubmitFeedback())
+			protected.Post("/feedback/not-interested", feedbackHandler.MarkNotInterested())
 			protected.Get("/recommendations/graph", movieHandler.GetGraphUserRecommendations())
 		})
 	})

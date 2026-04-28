@@ -5,9 +5,12 @@ import (
 	"cenimatch/internal/ports"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type OnboardingService struct {
@@ -22,6 +25,18 @@ func NewOnboardingService(db ports.DBManager) *OnboardingService {
 // updates user_preferences and user_mood_profile in a single transaction.
 func (s *OnboardingService) SaveOnboarding(ctx context.Context, userID uuid.UUID, req domain.OnboardingRequest) error {
 	return s.db.WithTx(ctx, func(txCtx context.Context) error {
+		var prevLiked []int32
+		var prevDisliked []int32
+		err := s.db.QueryRow(txCtx, `
+			SELECT coalesce(liked, '{}'::int[]), coalesce(disliked, '{}'::int[])
+			FROM user_mood_profile
+			WHERE user_id = $1`,
+			userID,
+		).Scan(&prevLiked, &prevDisliked)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("read existing mood profile: %w", err)
+		}
+
 		// build genre_weights as {"Action": 1.0, "Drama": 1.0, ...}
 		weights := make(map[string]float64, len(req.Genres))
 		for _, g := range req.Genres {
@@ -68,6 +83,157 @@ func (s *OnboardingService) SaveOnboarding(ctx context.Context, userID uuid.UUID
 			return fmt.Errorf("update mood profile: %w", err)
 		}
 
+		if err := s.syncMoodProfileGraphEdges(txCtx, userID, toIntSlice(prevLiked), toIntSlice(prevDisliked), req.LikedIDs, req.DislikedIDs); err != nil {
+			return err
+		}
+
 		return nil
 	})
+}
+
+func (s *OnboardingService) syncMoodProfileGraphEdges(
+	ctx context.Context,
+	userID uuid.UUID,
+	prevLiked []int,
+	prevDisliked []int,
+	liked []int,
+	disliked []int,
+) error {
+	merged := make(map[int]struct{}, len(prevLiked)+len(prevDisliked)+len(liked)+len(disliked))
+	for _, id := range prevLiked {
+		if id > 0 {
+			merged[id] = struct{}{}
+		}
+	}
+	for _, id := range prevDisliked {
+		if id > 0 {
+			merged[id] = struct{}{}
+		}
+	}
+	for _, id := range liked {
+		if id > 0 {
+			merged[id] = struct{}{}
+		}
+	}
+	for _, id := range disliked {
+		if id > 0 {
+			merged[id] = struct{}{}
+		}
+	}
+
+	movieIDs := make([]int, 0, len(merged))
+	for id := range merged {
+		movieIDs = append(movieIDs, id)
+	}
+
+	baseParams, err := graphParamJSON(map[string]any{
+		"uid":       userID.String(),
+		"movie_ids": movieIDs,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(ctx, `
+		SELECT * FROM cypher('movie_graph', $$
+			MERGE (:User {user_id: $uid})
+			RETURN count(*)
+		$$, $1::agtype) AS (v agtype)`,
+		baseParams,
+	)
+	if err != nil {
+		return fmt.Errorf("ensure graph user node: %w", err)
+	}
+
+	if len(movieIDs) > 0 {
+		_, err = s.db.Exec(ctx, `
+			SELECT * FROM cypher('movie_graph', $$
+				MATCH (u:User {user_id: $uid})-[r:RATED]->(m:Movie)
+				WHERE m.movie_id IN $movie_ids
+				DELETE r
+				RETURN count(*)
+			$$, $1::agtype) AS (v agtype)`,
+			baseParams,
+		)
+		if err != nil {
+			return fmt.Errorf("clear graph rated edges: %w", err)
+		}
+
+		_, err = s.db.Exec(ctx, `
+			SELECT * FROM cypher('movie_graph', $$
+				MATCH (u:User {user_id: $uid})-[w:WATCHED]->(m:Movie)
+				WHERE m.movie_id IN $movie_ids
+				DELETE w
+				RETURN count(*)
+			$$, $1::agtype) AS (v agtype)`,
+			baseParams,
+		)
+		if err != nil {
+			return fmt.Errorf("clear graph watched edges: %w", err)
+		}
+	}
+
+	if len(liked) > 0 {
+		paramJSON, err := graphParamJSON(map[string]any{
+			"uid":       userID.String(),
+			"movie_ids": liked,
+			"ts":        time.Now().UTC().Format(time.RFC3339),
+		})
+		if err != nil {
+			return err
+		}
+		_, err = s.db.Exec(ctx, `
+			SELECT * FROM cypher('movie_graph', $$
+				MATCH (u:User {user_id: $uid})
+				UNWIND $movie_ids AS mid
+				MATCH (m:Movie {movie_id: mid})
+				MERGE (u)-[w:WATCHED]->(m)
+				SET w.watched_at = $ts, w.completed = true
+				MERGE (u)-[r:RATED]->(m)
+				SET r.rating = 5.0, r.not_interested = false, r.created_at = $ts
+				RETURN count(*)
+			$$, $1::agtype) AS (v agtype)`,
+			paramJSON,
+		)
+		if err != nil {
+			return fmt.Errorf("sync graph liked edges: %w", err)
+		}
+	}
+
+	if len(disliked) > 0 {
+		paramJSON, err := graphParamJSON(map[string]any{
+			"uid":       userID.String(),
+			"movie_ids": disliked,
+			"ts":        time.Now().UTC().Format(time.RFC3339),
+		})
+		if err != nil {
+			return err
+		}
+		_, err = s.db.Exec(ctx, `
+			SELECT * FROM cypher('movie_graph', $$
+				MATCH (u:User {user_id: $uid})
+				UNWIND $movie_ids AS mid
+				MATCH (m:Movie {movie_id: mid})
+				MERGE (u)-[w:WATCHED]->(m)
+				SET w.watched_at = $ts, w.completed = true
+				MERGE (u)-[r:RATED]->(m)
+				SET r.rating = 1.0, r.not_interested = true, r.created_at = $ts
+				RETURN count(*)
+			$$, $1::agtype) AS (v agtype)`,
+			paramJSON,
+		)
+		if err != nil {
+			return fmt.Errorf("sync graph disliked edges: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func toIntSlice(in []int32) []int {
+	out := make([]int, 0, len(in))
+	for _, v := range in {
+		out = append(out, int(v))
+	}
+	return out
 }

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type MovieRepo struct {
@@ -44,6 +44,7 @@ func (m *MovieRepo) ListMovies(
 			m.original_lang,
 			m.overview,
 			m.popularity,
+			m.imdb_rating,
 			m.vote_avg,
 			m.vote_count,
 			m.budget,
@@ -109,7 +110,7 @@ func (m *MovieRepo) ListMovies(
 				lower(m.poster_path) <> 'none' AND
 				coalesce(m.vote_count, 0) >= 20
 				%s
-			ORDER BY m.tmdb_id DESC
+			ORDER BY coalesce(m.popularity, 0) DESC, coalesce(m.vote_count, 0) DESC
 			LIMIT $%d OFFSET $%d
 		)`, genreFilter, argCount, argCount+1)
 		args = append(args, limit, offset)
@@ -137,7 +138,7 @@ func (m *MovieRepo) ListMovies(
 	}
 	defer rows.Close()
 
-	var movies []domain.RawMovie
+	movies := make([]domain.RawMovie, 0)
 	for rows.Next() {
 		var movie domain.RawMovie
 		err := rows.Scan(
@@ -151,6 +152,7 @@ func (m *MovieRepo) ListMovies(
 			&movie.OriginalLang,
 			&movie.Overview,
 			&movie.Popularity,
+			&movie.IMDBRating,
 			&movie.VoteAvg,
 			&movie.VoteCount,
 			&movie.Budget,
@@ -176,6 +178,248 @@ func (m *MovieRepo) ListMovies(
 	return movies, nil
 }
 
+func (m *MovieRepo) GetTopRatedMoviesAllTime(
+	ctx context.Context,
+	limit int,
+) ([]domain.RawMovie, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+
+	sql := `
+		SELECT
+			m.tmdb_id,
+			m.imdb_id,
+			m.title,
+			m.original_title,
+			to_char(m.release_date, 'YYYY-MM-DD') AS release_date,
+			m.release_year,
+			m.runtime_min,
+			m.original_lang,
+			m.overview,
+			m.popularity,
+			m.imdb_rating,
+			m.vote_avg,
+			m.vote_count,
+			m.budget,
+			m.revenue,
+			m.mpaa_rating,
+			m.poster_path,
+			m.enriched,
+			coalesce(g.names, '{}'::text[]) AS genres,
+			coalesce(t.tags, '{}'::text[]) AS mood_tags,
+			d.director_name,
+			coalesce(c.cast_names, '{}'::text[]) AS cast_names
+		FROM movies m
+		LEFT JOIN LATERAL (
+			SELECT array_agg(g.name ORDER BY g.name) AS names
+			FROM movie_genres mg
+			JOIN genres g ON g.id = mg.genre_id
+			WHERE mg.movie_id = m.tmdb_id
+		) g ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT array_agg(mt.tag_value ORDER BY mt.tag_value) AS tags
+			FROM movie_tags mt
+			WHERE mt.movie_id = m.tmdb_id AND mt.tag_key = 'mood'
+		) t ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT p.primary_name AS director_name
+			FROM movie_crew mc
+			JOIN persons p ON p.imdb_id = mc.person_id
+			WHERE mc.movie_id = m.tmdb_id AND mc.role = 'director'
+			ORDER BY mc.ordering NULLS LAST
+			LIMIT 1
+		) d ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT array_agg(name ORDER BY ord) AS cast_names
+			FROM (
+				SELECT p.primary_name AS name, mc.ordering AS ord
+				FROM movie_crew mc
+				JOIN persons p ON p.imdb_id = mc.person_id
+				WHERE mc.movie_id = m.tmdb_id AND mc.role = 'actor'
+				ORDER BY mc.ordering NULLS LAST
+				LIMIT 8
+			) cast_members
+		) c ON TRUE
+		WHERE
+			m.poster_path IS NOT NULL AND
+			lower(m.poster_path) <> 'none' AND
+			m.imdb_rating IS NOT NULL AND
+			coalesce(m.vote_count, 0) >= 20
+		ORDER BY
+			m.imdb_rating DESC,
+			coalesce(m.vote_count, 0) DESC,
+			coalesce(m.popularity, 0) DESC
+		LIMIT $1`
+
+	rows, err := m.db.Query(ctx, sql, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	movies := make([]domain.RawMovie, 0)
+	for rows.Next() {
+		var movie domain.RawMovie
+		err := rows.Scan(
+			&movie.TMDBID,
+			&movie.IMDBID,
+			&movie.Title,
+			&movie.OriginalTitle,
+			&movie.ReleaseDate,
+			&movie.ReleaseYear,
+			&movie.RuntimeMin,
+			&movie.OriginalLang,
+			&movie.Overview,
+			&movie.Popularity,
+			&movie.IMDBRating,
+			&movie.VoteAvg,
+			&movie.VoteCount,
+			&movie.Budget,
+			&movie.Revenue,
+			&movie.MPAARating,
+			&movie.PosterPath,
+			&movie.Enriched,
+			&movie.Genres,
+			&movie.MoodTags,
+			&movie.DirectorName,
+			&movie.CastNames,
+		)
+		if err != nil {
+			return nil, err
+		}
+		movies = append(movies, movie)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return movies, nil
+}
+
+func (m *MovieRepo) GetTrendingMoviesThisWeek(
+	ctx context.Context,
+	limit int,
+) ([]domain.RawMovie, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+
+	sql := `
+			WITH trending_week AS (
+				SELECT uf.movie_id AS tmdb_id, count(*) AS rating_count
+				FROM user_feedback uf
+				WHERE
+					uf.created_at >= now() - interval '7 days' AND
+					uf.rating IS NOT NULL AND
+					coalesce(uf.not_interested, false) = false
+				GROUP BY uf.movie_id
+				ORDER BY rating_count DESC, uf.movie_id
+				LIMIT $1
+		)
+		SELECT
+			m.tmdb_id,
+			m.imdb_id,
+			m.title,
+			m.original_title,
+			to_char(m.release_date, 'YYYY-MM-DD') AS release_date,
+			m.release_year,
+			m.runtime_min,
+			m.original_lang,
+			m.overview,
+			m.popularity,
+			m.imdb_rating,
+			m.vote_avg,
+			m.vote_count,
+			m.budget,
+			m.revenue,
+			m.mpaa_rating,
+			m.poster_path,
+			m.enriched,
+			coalesce(g.names, '{}'::text[]) AS genres,
+			coalesce(t.tags, '{}'::text[]) AS mood_tags,
+			d.director_name,
+			coalesce(c.cast_names, '{}'::text[]) AS cast_names
+		FROM movies m
+		JOIN trending_week tw ON tw.tmdb_id = m.tmdb_id
+		LEFT JOIN LATERAL (
+			SELECT array_agg(g.name ORDER BY g.name) AS names
+			FROM movie_genres mg
+			JOIN genres g ON g.id = mg.genre_id
+			WHERE mg.movie_id = m.tmdb_id
+		) g ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT array_agg(mt.tag_value ORDER BY mt.tag_value) AS tags
+			FROM movie_tags mt
+			WHERE mt.movie_id = m.tmdb_id AND mt.tag_key = 'mood'
+		) t ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT p.primary_name AS director_name
+			FROM movie_crew mc
+			JOIN persons p ON p.imdb_id = mc.person_id
+			WHERE mc.movie_id = m.tmdb_id AND mc.role = 'director'
+			ORDER BY mc.ordering NULLS LAST
+			LIMIT 1
+		) d ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT array_agg(name ORDER BY ord) AS cast_names
+			FROM (
+				SELECT p.primary_name AS name, mc.ordering AS ord
+				FROM movie_crew mc
+				JOIN persons p ON p.imdb_id = mc.person_id
+				WHERE mc.movie_id = m.tmdb_id AND mc.role = 'actor'
+				ORDER BY mc.ordering NULLS LAST
+				LIMIT 8
+			) cast_members
+		) c ON TRUE
+		ORDER BY tw.rating_count DESC, coalesce(m.popularity, 0) DESC, coalesce(m.vote_count, 0) DESC`
+
+	rows, err := m.db.Query(ctx, sql, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	movies := make([]domain.RawMovie, 0)
+	for rows.Next() {
+		var movie domain.RawMovie
+		if err := rows.Scan(
+			&movie.TMDBID,
+			&movie.IMDBID,
+			&movie.Title,
+			&movie.OriginalTitle,
+			&movie.ReleaseDate,
+			&movie.ReleaseYear,
+			&movie.RuntimeMin,
+			&movie.OriginalLang,
+			&movie.Overview,
+			&movie.Popularity,
+			&movie.IMDBRating,
+			&movie.VoteAvg,
+			&movie.VoteCount,
+			&movie.Budget,
+			&movie.Revenue,
+			&movie.MPAARating,
+			&movie.PosterPath,
+			&movie.Enriched,
+			&movie.Genres,
+			&movie.MoodTags,
+			&movie.DirectorName,
+			&movie.CastNames,
+		); err != nil {
+			return nil, err
+		}
+		movies = append(movies, movie)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return movies, nil
+}
+
 func (m *MovieRepo) GetMovieByID(ctx context.Context, id int64) (*domain.RawMovie, error) {
 	sql := `
 		SELECT
@@ -189,6 +433,7 @@ func (m *MovieRepo) GetMovieByID(ctx context.Context, id int64) (*domain.RawMovi
 			m.original_lang,
 			m.overview,
 			m.popularity,
+			m.imdb_rating,
 			m.vote_avg,
 			m.vote_count,
 			m.budget,
@@ -224,6 +469,7 @@ func (m *MovieRepo) GetMovieByID(ctx context.Context, id int64) (*domain.RawMovi
 		&movie.OriginalLang,
 		&movie.Overview,
 		&movie.Popularity,
+		&movie.IMDBRating,
 		&movie.VoteAvg,
 		&movie.VoteCount,
 		&movie.Budget,
@@ -255,6 +501,7 @@ func (m *MovieRepo) GetMovieCrewByID(ctx context.Context, id int64) (*domain.Mov
 
 	sql := `
 		SELECT
+			p.imdb_id,
 			p.primary_name,
 			mc.role::text,
 			nullif(mc.character, ''),
@@ -282,6 +529,7 @@ func (m *MovieRepo) GetMovieCrewByID(ctx context.Context, id int64) (*domain.Mov
 	for rows.Next() {
 		var member domain.MovieCrewMember
 		if err := rows.Scan(
+			&member.PersonID,
 			&member.Name,
 			&member.Role,
 			&member.Job,
@@ -327,6 +575,7 @@ func (m *MovieRepo) GetRelatedMovies(
 			m.original_lang,
 			m.overview,
 			m.popularity,
+			m.imdb_rating,
 			m.vote_avg,
 			m.vote_count,
 			m.budget,
@@ -399,6 +648,7 @@ func (m *MovieRepo) GetRelatedMovies(
 			&movie.OriginalLang,
 			&movie.Overview,
 			&movie.Popularity,
+			&movie.IMDBRating,
 			&movie.VoteAvg,
 			&movie.VoteCount,
 			&movie.Budget,
@@ -442,6 +692,7 @@ func (m *MovieRepo) fetchGraphSubset(ctx context.Context, paramJSON string, cyph
 			m.original_lang,
 			m.overview,
 			m.popularity,
+			m.imdb_rating,
 			m.vote_avg,
 			m.vote_count,
 			m.budget,
@@ -500,6 +751,7 @@ func (m *MovieRepo) fetchGraphSubset(ctx context.Context, paramJSON string, cyph
 			&movie.TMDBID, &movie.IMDBID, &movie.Title, &movie.OriginalTitle,
 			&movie.ReleaseDate, &movie.ReleaseYear, &movie.RuntimeMin,
 			&movie.OriginalLang, &movie.Overview, &movie.Popularity,
+			&movie.IMDBRating,
 			&movie.VoteAvg, &movie.VoteCount, &movie.Budget, &movie.Revenue,
 			&movie.MPAARating, &movie.PosterPath, &movie.Enriched,
 			&movie.Genres, &movie.MoodTags, &movie.DirectorName, &movie.CastNames,
@@ -518,7 +770,7 @@ func (m *MovieRepo) fetchGraphSubset(ctx context.Context, paramJSON string, cyph
 
 func (m *MovieRepo) GetGraphRelatedMoviesData(ctx context.Context, id int64) (*domain.GraphRelatedMovies, error) {
 	result := &domain.GraphRelatedMovies{}
-	
+
 	dirQuery := `MATCH (m:Movie {movie_id: $id})<-[:DIRECTED]-(p:Person)-[:DIRECTED]->(rec:Movie)
 				 WHERE rec <> m
 				 RETURN DISTINCT rec.movie_id LIMIT 8`
@@ -553,32 +805,25 @@ func (m *MovieRepo) GetGraphRelatedMoviesData(ctx context.Context, id int64) (*d
 func (m *MovieRepo) GetUserGraphRecommendations(ctx context.Context, userID uuid.UUID) ([]domain.RawMovie, error) {
 	param := fmt.Sprintf(`{"uid": "%s"}`, userID.String())
 
-	// Try genre-based graph traversing first for unseen movies
-	recQuery := `MATCH (u:User {user_id: $uid})-[r:RATED]->(m1:Movie)-[:IN_GENRE]->(g:Genre)
-				 WHERE r.rating >= 4.0
-				 WITH u, collect(DISTINCT g) AS fav_genres
-				 MATCH (m2:Movie)-[:IN_GENRE]->(g2:Genre)
-				 WHERE g2 IN fav_genres
-				   AND NOT exists((u)-[:WATCHED]->(m2))
-				   AND NOT exists((u)-[:RATED]->(m2))
-				 WITH m2.movie_id AS m_id, m2.vote_avg AS vote, count(DISTINCT g2) AS overlap
-				 RETURN m_id, overlap, vote ORDER BY overlap DESC, vote DESC LIMIT 20`
-	
-	recs, err := m.fetchGraphSubset(ctx, param, recQuery, "AS (rec_id agtype, overlap agtype, vote agtype)")
+	// Try collaborative filtering: unseen movies liked by users with overlapping taste.
+	recQuery := `MATCH (u:User {user_id: $uid})-[r:RATED]->(m:Movie)
+					 WHERE r.rating >= 4.0 AND coalesce(r.not_interested, false) = false
+					 MATCH (other:User)-[r2:RATED]->(m)
+					 WHERE other <> u AND r2.rating >= 4.0 AND coalesce(r2.not_interested, false) = false
+					 WITH u, other, count(DISTINCT m) AS overlap
+					 WHERE overlap >= 1
+					 MATCH (other)-[r3:RATED]->(rec:Movie)
+					 WHERE r3.rating >= 4.0 AND coalesce(r3.not_interested, false) = false
+					   AND NOT exists((u)-[:WATCHED]->(rec))
+					   AND NOT exists((u)-[:RATED]->(rec))
+					 WITH rec.movie_id AS m_id, count(DISTINCT other) AS sim_users, avg(r3.rating) AS avg_sim_rating
+					 RETURN m_id, sim_users, avg_sim_rating
+					 ORDER BY sim_users DESC, avg_sim_rating DESC LIMIT 20`
+
+	recs, err := m.fetchGraphSubset(ctx, param, recQuery, "AS (rec_id agtype, sim_users agtype, avg_sim_rating agtype)")
 	if err != nil {
 		return nil, err
 	}
 
-	if len(recs) > 0 {
-		return recs, nil
-	}
-
-	// Fallback to globally popular unseen movies via graph traversal
-	fallbackQuery := `MATCH (u:User {user_id: $uid})
-					  MATCH (m:Movie)
-					  WHERE NOT exists((u)-[:WATCHED]->(m))
-						AND NOT exists((u)-[:RATED]->(m))
-					  WITH m.movie_id AS m_id, m.vote_avg AS vote
-					  RETURN m_id, vote ORDER BY vote DESC LIMIT 20`
-	return m.fetchGraphSubset(ctx, param, fallbackQuery, "AS (rec_id agtype, vote agtype)")
+	return recs, nil
 }

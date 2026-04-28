@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import MovieCard from "../components/MovieCard";
 import { realApi as api } from "../api/realApi";
-import { MOODS, GENRES } from "../types/movie";
+import { GENRES } from "../types/movie";
 import type { Movie } from "../types/movie";
 
 const PAGE_SIZE = 50;
@@ -16,7 +16,6 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [genreFilter, setGenreFilter] = useState("");
   const [yearFilter, setYearFilter] = useState("");
-  const [moodFilter, setMoodFilter] = useState("");
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
 
@@ -39,7 +38,7 @@ export default function SearchPage() {
       runSearch(query, 1);
     }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [query, genreFilter, moodFilter, yearFilter]);
+  }, [query, genreFilter, yearFilter]);
 
   async function runSearch(q: string, pageNumber: number) {
     setLoading(true);
@@ -48,7 +47,6 @@ export default function SearchPage() {
     setHasMore(raw.length === PAGE_SIZE);
     let data = raw;
     if (genreFilter) data = data.filter((m) => m.genre.includes(genreFilter));
-    if (moodFilter) data = data.filter((m) => m.mood.includes(moodFilter));
     if (yearFilter) data = data.filter((m) => String(m.year).startsWith(yearFilter));
     setResults(data);
     setLoading(false);
@@ -128,11 +126,6 @@ export default function SearchPage() {
           <select className="filter-select" value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)}>
             <option value="">All genres</option>
             {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
-          </select>
-
-          <select className="filter-select" value={moodFilter} onChange={(e) => setMoodFilter(e.target.value)}>
-            <option value="">All moods</option>
-            {MOODS.map((m) => <option key={m.label} value={m.label}>{m.label}</option>)}
           </select>
 
           <select className="filter-select" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>

@@ -13,6 +13,7 @@ type Config struct {
 	DatabaseURL            string
 	KaggleToken            string
 	Port                   string
+	CORSAllowedOrigins     []string
 	JWTSecret              string
 	JWTIssuer              string
 	BcryptCost             int
@@ -134,12 +135,13 @@ func Load() (*Config, error) {
 		Environment: env,
 		// infrastructure is always loaded from env,
 		// regardless of mode
-		DatabaseURL:      l.required("DATABASE_URL"),
-		KaggleToken:      l.optional("KAGGLE_API_TOKEN"),
-		JWTSecret:        l.required("JWT_SECRET"),
-		JWTIssuer:        l.required("JWT_ISSUER"),
-		Port:             l.required("PORT"),
-		OpenRouterAPIKey: l.optional("OPENROUTER_API_KEY"),
+		DatabaseURL:        l.required("DATABASE_URL"),
+		KaggleToken:        l.optional("KAGGLE_API_TOKEN"),
+		CORSAllowedOrigins: parseCSV(l.optional("CORS_ALLOWED_ORIGINS")),
+		JWTSecret:          l.required("JWT_SECRET"),
+		JWTIssuer:          l.required("JWT_ISSUER"),
+		Port:               l.required("PORT"),
+		OpenRouterAPIKey:   l.optional("OPENROUTER_API_KEY"),
 	}
 
 	if isProd {
@@ -158,4 +160,23 @@ func Load() (*Config, error) {
 		return nil, l.err
 	}
 	return cfg, nil
+}
+
+func parseCSV(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
