@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -66,9 +67,17 @@ func (c *Client) Complete(ctx context.Context, systemPrompt string, messages []M
 			return resp, nil
 		}
 		lastErr = err
-		
+
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			return "", err
+		}
+
 		// small delay to let the rate limit reset slightly before retrying
-		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 
 	// if it still fails, fallback to the other free models
@@ -78,6 +87,9 @@ func (c *Client) Complete(ctx context.Context, systemPrompt string, messages []M
 			return resp, nil
 		}
 		lastErr = err
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			return "", err
+		}
 	}
 	return "", lastErr
 }

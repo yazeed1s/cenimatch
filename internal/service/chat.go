@@ -4,6 +4,7 @@ import (
 	"cenimatch/internal/domain"
 	"cenimatch/internal/llm"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -33,11 +34,23 @@ func NewChatService(llmClient *llm.Client, db *pgxpool.Pool) *ChatService {
 
 // Query handles the full chat interaction turn
 func (s *ChatService) Query(ctx context.Context, messages []llm.Message) (*ChatResponse, error) {
-	llmCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	llmCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 
 	rawSQL, err := s.llm.Complete(llmCtx, llm.SchemaPrompt, messages)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(llmCtx.Err(), context.DeadlineExceeded) {
+			return &ChatResponse{
+				Type:    "text",
+				Message: "The AI query timed out while generating SQL. Please try again, or ask a shorter/more specific question.",
+			}, nil
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(llmCtx.Err(), context.Canceled) {
+			return &ChatResponse{
+				Type:    "text",
+				Message: "The request was canceled before the AI finished. Please try again.",
+			}, nil
+		}
 		if strings.Contains(err.Error(), "429") {
 			return &ChatResponse{
 				Type:    "text",
