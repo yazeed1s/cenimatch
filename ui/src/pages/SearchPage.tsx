@@ -19,11 +19,6 @@ export default function SearchPage() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
 
-  // NL search state
-  const [nlQuery, setNlQuery] = useState("");
-  const [nlLoading, setNlLoading] = useState(false);
-  const [generatedSQL, setGeneratedSQL] = useState("");
-
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
 
@@ -52,17 +47,6 @@ export default function SearchPage() {
     setLoading(false);
   }
 
-  async function handleNL(e: React.FormEvent) {
-    e.preventDefault();
-    if (!nlQuery.trim()) return;
-    setNlLoading(true);
-    const { sql, results: nlResults } = await api.naturalLanguageSearch(nlQuery);
-    setGeneratedSQL(sql);
-    setResults(nlResults);
-    setHasMore(false);
-    setNlLoading(false);
-  }
-
   async function goToPage(nextPage: number) {
     if (nextPage < 1) return;
     setPage(nextPage);
@@ -75,37 +59,13 @@ export default function SearchPage() {
       <div className="search-hero">
         <div className="container">
           <div style={{ maxWidth: 720 }}>
-            <div className="hero-eyebrow">Natural Language Search</div>
+            <div className="hero-eyebrow">Movie Search</div>
             <h1 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px,4vw,44px)", fontWeight: 900, letterSpacing: -1, marginBottom: 8 }}>
               Find your next favourite film
             </h1>
             <p style={{ color: "var(--text2)", fontSize: 15, marginBottom: 24 }}>
-              Try plain English:{" "}
-              <em style={{ color: "var(--accent)" }}>"something like Interstellar but less confusing"</em>
-              {" "}— we'll convert it to SQL.
+              Search by title, then narrow the results by genre or release year.
             </p>
-
-            <form onSubmit={handleNL} style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-              <div className="search-wrap-lg" style={{ flex: 1 }}>
-                <SearchIcon size={20} />
-                <input
-                  className="search-input-lg"
-                  value={nlQuery}
-                  onChange={(e) => setNlQuery(e.target.value)}
-                  placeholder="Describe what you want to watch..."
-                />
-              </div>
-              <button className="btn btn-primary" type="submit" disabled={nlLoading}>
-                {nlLoading ? "..." : "Ask AI"}
-              </button>
-            </form>
-
-            {generatedSQL && (
-              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "12px 16px", fontSize: 12, fontFamily: "monospace", color: "var(--accent)" }}>
-                <span style={{ color: "var(--text3)", marginRight: 8 }}>Generated SQL:</span>
-                {generatedSQL}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -156,17 +116,15 @@ export default function SearchPage() {
                 <MovieCard key={m.id} movie={m} onClick={(mv) => navigate(`/movie/${mv.id}`)} />
               ))}
             </div>
-            {!generatedSQL && (
-              <div style={{ marginTop: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                <button className="btn btn-ghost btn-sm" disabled={page === 1 || loading} onClick={() => goToPage(page - 1)}>
-                  ← Previous
-                </button>
-                <div style={{ fontSize: 13, color: "var(--text3)" }}>Page {page}</div>
-                <button className="btn btn-ghost btn-sm" disabled={!hasMore || loading} onClick={() => goToPage(page + 1)}>
-                  Next →
-                </button>
-              </div>
-            )}
+            <div style={{ marginTop: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <button className="btn btn-ghost btn-sm" disabled={page === 1 || loading} onClick={() => goToPage(page - 1)}>
+                ← Previous
+              </button>
+              <div style={{ fontSize: 13, color: "var(--text3)" }}>Page {page}</div>
+              <button className="btn btn-ghost btn-sm" disabled={!hasMore || loading} onClick={() => goToPage(page + 1)}>
+                Next →
+              </button>
+            </div>
           </>
         )}
       </div>
