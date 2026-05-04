@@ -1,29 +1,14 @@
 import { useEffect, useState } from "react";
 import { realApi } from "../api/realApi";
-import { GENRES, MOODS } from "../types/movie";
+import { GENRES } from "../types/movie";
 import type { Movie, User } from "../types/movie";
 
 interface OnboardingPageProps {
   onComplete: (user: User) => void;
 }
 
-const RUNTIME_OPTIONS = [
-  { label: "Any length", value: 0 },
-  { label: "Under 90 min", value: 80 },
-  { label: "90 – 120 min", value: 105 },
-  { label: "120 – 150 min", value: 135 },
-  { label: "150 min +", value: 170 },
-];
-
-const DECADE_OPTIONS = [
-  { label: "Classic (pre-1980)", low: 1900, high: 1979 },
-  { label: "80s – 90s", low: 1980, high: 1999 },
-  { label: "2000s", low: 2000, high: 2009 },
-  { label: "2010s", low: 2010, high: 2019 },
-  { label: "2020s", low: 2020, high: 2029 },
-];
-
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 3;
+const DEFAULT_ONBOARDING_MOOD = "Thought-Provoking";
 
 export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
   const [step, setStep] = useState(0);
@@ -42,23 +27,11 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
   const [likedMovies, setLikedMovies] = useState<Movie[]>([]);
   const [dislikedMovies, setDislikedMovies] = useState<Movie[]>([]);
 
-  // step 3 — preferences
-  const [runtimePref, setRuntimePref] = useState(0);
-  const [selectedDecades, setSelectedDecades] = useState<number[]>([]);
-
-  // step 4 — mood
-  const [mood, setMood] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
   function toggleGenre(g: string) {
     setGenres((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]));
-  }
-
-  function toggleDecade(idx: number) {
-    setSelectedDecades((prev) =>
-      prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
-    );
   }
 
   function validateStep0() {
@@ -137,25 +110,14 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
     setSubmitting(true);
     setSubmitError("");
     try {
-      let decadeLow: number | undefined;
-      let decadeHigh: number | undefined;
-      if (selectedDecades.length > 0) {
-        const decades = selectedDecades.map((i) => DECADE_OPTIONS[i]);
-        decadeLow = Math.min(...decades.map((d) => d.low));
-        decadeHigh = Math.max(...decades.map((d) => d.high));
-      }
-
       const user = await realApi.onboardUser({
         name,
         email,
         password,
         genres,
-        mood,
+        mood: DEFAULT_ONBOARDING_MOOD,
         likedMovieIds: likedMovies.map((m) => m.id),
         dislikedMovieIds: dislikedMovies.map((m) => m.id),
-        runtimePref: runtimePref || undefined,
-        decadeLow,
-        decadeHigh,
       });
       onComplete(user);
     } catch (err: unknown) {
@@ -299,92 +261,17 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
               )}
             </div>
 
-            <div style={{ display: "flex", gap: 10 }}>
-              <button className="btn btn-ghost" onClick={() => setStep(1)}>← Back</button>
-              <button className="btn btn-primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setStep(3)}>
-                Continue →
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* ── step 3 — preferences ── */}
-        {step === 3 && (
-          <>
-            <div className="onboard-title">Fine-tune your taste</div>
-            <div className="onboard-subtitle">
-              These help us filter better — skip anything you don't care about.
-            </div>
-
-            <div style={{ marginBottom: 28 }}>
-              <div className="form-label" style={{ marginBottom: 12 }}>Preferred runtime</div>
-              <div className="pref-options">
-                {RUNTIME_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    className={`pref-chip ${runtimePref === opt.value ? "sel" : ""}`}
-                    onClick={() => setRuntimePref(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 28 }}>
-              <div className="form-label" style={{ marginBottom: 12 }}>Favorite eras</div>
-              <div className="pref-options">
-                {DECADE_OPTIONS.map((opt, idx) => (
-                  <button
-                    key={opt.label}
-                    className={`pref-chip ${selectedDecades.includes(idx) ? "sel" : ""}`}
-                    onClick={() => toggleDecade(idx)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <button className="btn btn-ghost" onClick={() => setStep(2)}>← Back</button>
-              <button className="btn btn-primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setStep(4)}>
-                Continue →
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* ── step 4 — mood ── */}
-        {step === 4 && (
-          <>
-            <div className="onboard-title">What's your current vibe?</div>
-            <div className="onboard-subtitle">
-              Sets your default mood for recommendations. You can always change this later.
-            </div>
-            <div className="mood-pills" style={{ flexDirection: "column", gap: 10, marginBottom: 28 }}>
-              {MOODS.map((m) => (
-                <button
-                  key={m.label}
-                  className={`mood-pill ${mood === m.label ? "active" : ""}`}
-                  style={{ justifyContent: "flex-start" }}
-                  onClick={() => setMood(m.label)}
-                >
-                  <span className="mood-pill-emoji">{m.emoji}</span> {m.label}
-                </button>
-              ))}
-            </div>
             {submitError && (
               <div style={{ fontSize: 13, color: "var(--red)", marginBottom: 12, padding: "10px 14px", background: "rgba(232,85,85,0.08)", borderRadius: "var(--radius)", border: "1px solid rgba(232,85,85,0.2)" }}>
                 {submitError}
               </div>
             )}
             <div style={{ display: "flex", gap: 10 }}>
-              <button className="btn btn-ghost" onClick={() => setStep(3)}>← Back</button>
+              <button className="btn btn-ghost" onClick={() => setStep(1)}>← Back</button>
               <button
                 className="btn btn-primary"
                 style={{ flex: 1, justifyContent: "center" }}
-                disabled={submitting || !mood}
+                disabled={submitting}
                 onClick={finish}
               >
                 {submitting ? "Setting up…" : "Get My Recommendations ✦"}
