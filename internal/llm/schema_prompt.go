@@ -8,11 +8,12 @@ based on the user's natural language questions about movies.
 
 -- movies: core movie metadata
 CREATE TABLE movies (
-  tmdb_id       BIGINT PRIMARY KEY,
+  tmdb_id       INT PRIMARY KEY,
   imdb_id       TEXT,
+  imdb_rating   FLOAT,
   title         TEXT NOT NULL,
   original_title TEXT,
-  release_date  TEXT,
+  release_date  DATE,
   release_year  INT,
   runtime_min   INT,
   original_lang TEXT,
@@ -42,23 +43,24 @@ CREATE TABLE movie_genres (
 
 -- persons: cast and crew people (keyed by IMDb nconst)
 CREATE TABLE persons (
-  id          TEXT PRIMARY KEY,  -- IMDb nconst e.g. nm0000093
-  name        TEXT NOT NULL,
+  imdb_id     TEXT PRIMARY KEY,  -- IMDb nconst e.g. nm0000093
+  primary_name TEXT NOT NULL,
   birth_year  INT,
   death_year  INT,
-  primary_profession TEXT
+  primary_profession TEXT,
+  known_for_titles TEXT
 );
 
 -- movie_crew: links movies to persons with a role
 -- role values: 'director', 'actor', 'writer', 'producer'
 CREATE TABLE movie_crew (
-  movie_id    BIGINT REFERENCES movies(tmdb_id),
-  person_id   TEXT REFERENCES persons(id),
+  id          SERIAL PRIMARY KEY,
+  movie_id    INT REFERENCES movies(tmdb_id),
+  person_id   TEXT REFERENCES persons(imdb_id),
   role        TEXT NOT NULL,       -- director | actor | writer | producer
   character   TEXT,                -- for actors
-  job         TEXT,                -- free-text job description
   ordering    INT,                 -- billing order
-  PRIMARY KEY (movie_id, person_id, role)
+  UNIQUE (movie_id, person_id, role)
 );
 
 -- movie_tags: LLM-generated semantic tags per movie
@@ -96,8 +98,8 @@ CREATE TABLE user_preferences (
 -- user_mood_profile: onboarding-extracted mood preferences
 CREATE TABLE user_mood_profile (
   user_id        UUID PRIMARY KEY REFERENCES users(id),
-  liked_ids      INT[],           -- tmdb_ids of liked movies
-  disliked_ids   INT[],           -- tmdb_ids of disliked movies
+  liked          INT[],           -- tmdb_ids of liked movies
+  disliked       INT[],           -- tmdb_ids of disliked movies
   attributes     JSONB            -- LLM-extracted: pacing, tone, complexity
 );
 
@@ -175,14 +177,22 @@ translate to equivalent relational SQL using the tables above.
 
 5. Use table aliases (m for movies, g for genres, p for persons, mc for movie_crew).
 
-6. For text search on titles, use ILIKE '%term%' or trigram similarity:
+6. For person/cast/crew names, use persons.primary_name. Join crew to people with:
+     JOIN persons p ON p.imdb_id = mc.person_id
+   Never use p.id or p.name; those columns do not exist.
+
+7. For text search on titles, use ILIKE '%term%' or trigram similarity:
      title ILIKE '%interstellar%'
 
-7. For genre filtering, JOIN through movie_genres and genres:
+8. For genre filtering, JOIN through movie_genres and genres:
      JOIN movie_genres mg ON mg.movie_id = m.tmdb_id
      JOIN genres g ON g.id = mg.genre_id AND LOWER(g.name) = 'action'
+   Use canonical TMDB genre names. Common aliases:
+     sci-fi, scifi, sci fi => Science Fiction
+   Example:
+     LOWER(g.name) = 'science fiction'
 
-8. If the question cannot be answered with a SELECT query, or if it is
+9. If the question cannot be answered with a SELECT query, or if it is
    asking you to do something dangerous, respond with exactly:
      UNSAFE: <brief reason>
 `

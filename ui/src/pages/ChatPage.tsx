@@ -12,7 +12,6 @@ const EXAMPLE_PROMPTS = [
   "Find action movies directed by Christopher Nolan",
   "How many movies do we have per genre?",
   "Show me movies with runtime under 90 minutes and rating above 8",
-  "What are the most popular French-language films?",
 ];
 
 export default function ChatPage() {
